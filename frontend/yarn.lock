@@ -1552,14 +1552,46 @@
   dependencies:
     "@solana/codecs" "2.0.0-rc.1"
 
-"@solana/spl-token-metadata@^0.1.6":
+"@solana/spl-token-metadata@^0.1.2", "@solana/spl-token-metadata@^0.1.6":
   version "0.1.6"
   resolved "https://registry.npmjs.org/@solana/spl-token-metadata/-/spl-token-metadata-0.1.6.tgz"
   integrity sha512-7sMt1rsm/zQOQcUWllQX9mD2O6KhSAtY1hFR2hfFwgqfFWzSY9E9GDvFVNYUI1F0iQKcm6HmePU9QbKRXTEBiA==
   dependencies:
     "@solana/codecs" "2.0.0-rc.1"
 
-"@solana/spl-token@^0.4.13", "@solana/spl-token@^0.4.8", "@solana/spl-token@0.4.13":
+"@solana/spl-token@^0.3.11":
+  version "0.3.11"
+  resolved "https://registry.npmjs.org/@solana/spl-token/-/spl-token-0.3.11.tgz"
+  integrity sha512-bvohO3rIMSVL24Pb+I4EYTJ6cL82eFpInEXD/I8K8upOGjpqHsKUoAempR/RnUlI1qSFNyFlWJfu6MNUgfbCQQ==
+  dependencies:
+    "@solana/buffer-layout" "^4.0.0"
+    "@solana/buffer-layout-utils" "^0.2.0"
+    "@solana/spl-token-metadata" "^0.1.2"
+    buffer "^6.0.3"
+
+"@solana/spl-token@^0.4.13":
+  version "0.4.14"
+  resolved "https://registry.npmjs.org/@solana/spl-token/-/spl-token-0.4.14.tgz"
+  integrity sha512-u09zr96UBpX4U685MnvQsNzlvw9TiY005hk1vJmJr7gMJldoPG1eYU5/wNEyOA5lkMLiR/gOi9SFD4MefOYEsA==
+  dependencies:
+    "@solana/buffer-layout" "^4.0.0"
+    "@solana/buffer-layout-utils" "^0.2.0"
+    "@solana/spl-token-group" "^0.0.7"
+    "@solana/spl-token-metadata" "^0.1.6"
+    buffer "^6.0.3"
+
+"@solana/spl-token@^0.4.8":
+  version "0.4.14"
+  resolved "https://registry.npmjs.org/@solana/spl-token/-/spl-token-0.4.14.tgz"
+  integrity sha512-u09zr96UBpX4U685MnvQsNzlvw9TiY005hk1vJmJr7gMJldoPG1eYU5/wNEyOA5lkMLiR/gOi9SFD4MefOYEsA==
+  dependencies:
+    "@solana/buffer-layout" "^4.0.0"
+    "@solana/buffer-layout-utils" "^0.2.0"
+    "@solana/spl-token-group" "^0.0.7"
+    "@solana/spl-token-metadata" "^0.1.6"
+    buffer "^6.0.3"
+
+"@solana/spl-token@0.4.13":
   version "0.4.13"
   resolved "https://registry.npmjs.org/@solana/spl-token/-/spl-token-0.4.13.tgz"
   integrity sha512-cite/pYWQZZVvLbg5lsodSovbetK/eA24gaR0eeUeMuBAMNrT8XFCwaygKy0N2WSg3gSyjjNpIeAGBAKZaY/1w==
@@ -2035,7 +2067,7 @@
     "@wallet-standard/app" "^1.1.0"
     "@wallet-standard/base" "^1.1.0"
 
-"@solana/web3.js@*", "@solana/web3.js@^1.32.0", "@solana/web3.js@^1.36.0", "@solana/web3.js@^1.44.3", "@solana/web3.js@^1.5.0", "@solana/web3.js@^1.50.1", "@solana/web3.js@^1.68.0", "@solana/web3.js@^1.69.0", "@solana/web3.js@^1.91.4", "@solana/web3.js@^1.95.3", "@solana/web3.js@^1.95.4", "@solana/web3.js@^1.95.5", "@solana/web3.js@^1.98.0", "@solana/web3.js@^1.98.4", "@solana/web3.js@1.98.4", "@solana/web3.js@1.x":
+"@solana/web3.js@*", "@solana/web3.js@^1.32.0", "@solana/web3.js@^1.36.0", "@solana/web3.js@^1.44.3", "@solana/web3.js@^1.5.0", "@solana/web3.js@^1.50.1", "@solana/web3.js@^1.68.0", "@solana/web3.js@^1.69.0", "@solana/web3.js@^1.88.0", "@solana/web3.js@^1.91.4", "@solana/web3.js@^1.95.3", "@solana/web3.js@^1.95.4", "@solana/web3.js@^1.95.5", "@solana/web3.js@^1.98.0", "@solana/web3.js@^1.98.4", "@solana/web3.js@1.98.4", "@solana/web3.js@1.x":
   version "1.98.4"
   resolved "https://registry.npmjs.org/@solana/web3.js/-/web3.js-1.98.4.tgz"
   integrity sha512-vv9lfnvjUsRiq//+j5pBdXig0IQdtzA0BRZ3bXEP4KaIyF1CcaydWqgyzQgfZMNIsWNWmG+AUHwPy4AHOD6gpw==
@@ -3394,6 +3426,11 @@ borsh@^0.7.0:
     bn.js "^5.2.0"
     bs58 "^4.0.0"
     text-encoding-utf-8 "^1.0.2"
+
+borsh@^2.0.0:
+  version "2.0.0"
+  resolved "https://registry.npmjs.org/borsh/-/borsh-2.0.0.tgz"
+  integrity sha512-kc9+BgR3zz9+cjbwM8ODoUB4fs3X3I5A/HtX7LZKxCLaMrEeDFoBpnhZY//DTS1VZBSs6S5v46RZRbZjRFspEg==
 
 bowser@^2.11.0:
   version "2.14.1"

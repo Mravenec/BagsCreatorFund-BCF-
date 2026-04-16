@@ -1,15 +1,13 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Token, TokenAccount, Transfer};
-use anchor_spl::associated_token::AssociatedToken;
 use switchboard_on_demand::accounts::RandomnessAccountData;
 
-declare_id!("BCF1111111111111111111111111111111111111111"); // Placeholder for production ID
+declare_id!("BCF1111111111111111111111111111111111111111");
 
 #[program]
 pub mod bcf_core {
     use super::*;
 
-    /// Initializes a new Risk-Based Funding Campaign.
     pub fn initialize_raffle(
         ctx: Context<InitializeRaffle>,
         prize_amount: u64,
@@ -24,37 +22,37 @@ pub mod bcf_core {
         raffle.creator = ctx.accounts.creator.key();
         raffle.prize_amount = prize_amount;
         raffle.ticket_price = ticket_price;
-        raffle.start_time = clock.unix_timestamp;
-        raffle.end_time = clock.unix_timestamp + duration;
-        raffle.expiry_time = clock.unix_timestamp + 3600; // 1 hour for bootstrap funding
+        raffle.start_time = 0; // Set upon activation
+        raffle.end_time = 0;   // Set upon activation
+        raffle.expiry_time = clock.unix_timestamp + (15 * 60); // 15-minute funding window
+        raffle.created_at = clock.unix_timestamp;
         raffle.status = RaffleStatus::WaitingDeposit;
         raffle.description = description;
         raffle.donation_address = donation_address;
         raffle.total_tickets_sold = 0;
         raffle.collected_funds = 0;
+        raffle.winning_number = None;
         raffle.bump = ctx.bumps.raffle;
         raffle.vault_bump = ctx.bumps.vault_account;
+        raffle.slots = [None; 100];
 
-        msg!("BCF: Funding Campaign Initialized: {}", raffle.description);
+        msg!("BCF: Raffle Initialized. Waiting for bootstrap funding.");
         Ok(())
     }
 
-    /// Activates the funding round once the creator has deposited the prize pool.
-    /// Supports direct deposits from CEX (Binance/Coinbase) to the vault PDA.
     pub fn activate_raffle(ctx: Context<ActivateRaffle>) -> Result<()> {
         let raffle = &mut ctx.accounts.raffle;
+        let clock = Clock::get()?;
         
-        // Verify bootstrap balance in the vault
         if ctx.accounts.vault_account.amount < raffle.prize_amount {
             return err!(BCFError::InsufficientPrizeDeposit);
         }
 
         raffle.status = RaffleStatus::Active;
-        msg!("BCF: Funding Infrastructure is now ACTIVE and accepting entries.");
+        msg!("BCF: Raffle is now ACTIVE.");
         Ok(())
     }
 
-    /// Participate in the funding round. Logic includes a 2.5% protocol risk fee.
     pub fn buy_ticket(ctx: Context<BuyTicket>, number: u8) -> Result<()> {
         let raffle = &mut ctx.accounts.raffle;
         let clock = Clock::get()?;
@@ -63,32 +61,28 @@ pub mod bcf_core {
             return err!(BCFError::RaffleNotActive);
         }
 
-        if number > 99 {
+        if number > 99 || raffle.slots[number as usize].is_some() {
             return err!(BCFError::InvalidNumberSelection);
         }
 
-        // Calculate Risk Fee (2.5%) - Standard Protocol Fee for BCF
-        let fee = raffle.ticket_price * 25 / 1000;
+        let fee = raffle.ticket_price * 25 / 1000; // 2.5%
         let net_to_pool = raffle.ticket_price - fee;
 
-        // Transfer $BAGS from participant to infrastructure vault
         let cpi_accounts = Transfer {
             from: ctx.accounts.buyer_token_account.to_account_info(),
             to: ctx.accounts.vault_account.to_account_info(),
             authority: ctx.accounts.buyer.to_account_info(),
         };
-        let cpi_program = ctx.accounts.token_program.to_account_info();
-        token::transfer(CpiContext::new(cpi_program, cpi_accounts), raffle.ticket_price)?;
+        token::transfer(CpiContext::new(ctx.accounts.token_program.to_account_info(), cpi_accounts), raffle.ticket_price)?;
 
+        raffle.slots[number as usize] = Some(ctx.accounts.buyer.key());
         raffle.total_tickets_sold += 1;
         raffle.collected_funds += net_to_pool;
-        
-        msg!("BCF: Slot #{} secured. Participant: {}", number, ctx.accounts.buyer.key());
+
         Ok(())
     }
 
-    /// Commit phase: Request verifiable randomness from Switchboard V3.
-    pub fn commit_raffle(ctx: Context<CommitRaffle>) -> Result<()> {
+    pub fn settle_raffle(ctx: Context<SettleRaffle>) -> Result<()> {
         let raffle = &mut ctx.accounts.raffle;
         let clock = Clock::get()?;
 
@@ -96,18 +90,6 @@ pub mod bcf_core {
             return err!(BCFError::RaffleStillOngoing);
         }
 
-        raffle.status = RaffleStatus::Committing;
-        
-        msg!("BCF: Verifiable randomness requested via Switchboard V3.");
-        Ok(())
-    }
-
-    /// Settle phase: Reveal the winning slot and prepare for distribution.
-    pub fn settle_raffle(ctx: Context<SettleRaffle>) -> Result<()> {
-        let raffle = &mut ctx.accounts.raffle;
-        let clock = Clock::get()?;
-
-        // Parse randomness from Switchboard On-Demand
         let randomness_data = RandomnessAccountData::parse(ctx.accounts.randomness_account.data.borrow()).unwrap();
         let random_bytes = randomness_data.get_value(clock.slot)?;
         let winning_number = (random_bytes[0] % 100) as u8;
@@ -115,11 +97,117 @@ pub mod bcf_core {
         raffle.winning_number = Some(winning_number);
         raffle.status = RaffleStatus::Resolved;
 
-        msg!("BCF: ROUND RESOLVED. Winning Slot: #{}", winning_number);
+        msg!("BCF: Winning Number revealed: #{}", winning_number);
+        Ok(())
+    }
+
+    pub fn claim_universal(ctx: Context<ClaimUniversal>) -> Result<()> {
+        let raffle = &mut ctx.accounts.raffle;
         
-        // Distribution of funds logic following risk-based principles:
-        // Winner gets prize_amount, Creator gets collected_funds (net of fees).
+        if raffle.status != RaffleStatus::Resolved {
+            return err!(BCFError::RaffleNotResolved);
+        }
+
+        let winning_number = raffle.winning_number.unwrap() as usize;
+        let winner_pubkey = raffle.slots[winning_number];
+
+        let seeds = &[
+            b"raffle",
+            raffle.creator.as_ref(),
+            raffle.description.as_bytes(),
+            &[raffle.bump],
+        ];
+        let signer = &[&seeds[..]];
+
+        match winner_pubkey {
+            Some(winner) => {
+                if winner != ctx.accounts.claimant.key() && raffle.creator != ctx.accounts.claimant.key() {
+                    return err!(BCFError::UnauthorizedClaimant);
+                }
+
+                // Transfer Prize to winner
+                let prize_transfer = Transfer {
+                    from: ctx.accounts.vault_account.to_account_info(),
+                    to: ctx.accounts.winner_token_account.to_account_info(),
+                    authority: raffle.to_account_info(),
+                };
+                token::transfer(CpiContext::new_with_signer(ctx.accounts.token_program.to_account_info(), prize_transfer, signer), raffle.prize_amount)?;
+
+                // Transfer Sales to creator
+                let sales_transfer = Transfer {
+                    from: ctx.accounts.vault_account.to_account_info(),
+                    to: ctx.accounts.creator_token_account.to_account_info(),
+                    authority: raffle.to_account_info(),
+                };
+                token::transfer(CpiContext::new_with_signer(ctx.accounts.token_program.to_account_info(), sales_transfer, signer), raffle.collected_funds)?;
+            },
+            None => {
+                if raffle.creator != ctx.accounts.claimant.key() {
+                    return err!(BCFError::UnauthorizedClaimant);
+                }
+
+                // Transfer Everything to creator
+                let total_transfer = Transfer {
+                    from: ctx.accounts.vault_account.to_account_info(),
+                    to: ctx.accounts.creator_token_account.to_account_info(),
+                    authority: raffle.to_account_info(),
+                };
+                token::transfer(CpiContext::new_with_signer(ctx.accounts.token_program.to_account_info(), total_transfer, signer), ctx.accounts.vault_account.amount)?;
+            }
+        raffle.status = RaffleStatus::Closed;
+        Ok(())
+    }
+
+    pub fn cancel_raffle(ctx: Context<CancelRaffle>) -> Result<()> {
+        let raffle = &mut ctx.accounts.raffle;
+        let clock = Clock::get()?;
+
+        // Can only cancel if still waiting deposit AND 15 mins passed
+        if raffle.status != RaffleStatus::WaitingDeposit {
+            return err!(BCFError::RaffleNotCancellable);
+        }
+
+        if clock.unix_timestamp < raffle.expiry_time {
+            return err!(BCFError::RaffleStillOngoing);
+        }
+
+        let seeds = &[
+            b"raffle",
+            raffle.creator.as_ref(),
+            raffle.description.as_bytes(),
+            &[raffle.bump],
+        ];
+        let signer = &[&seeds[..]];
+
+        // Refund any partial deposited prize to creator
+        if ctx.accounts.vault_account.amount > 0 {
+            let refund_transfer = Transfer {
+                from: ctx.accounts.vault_account.to_account_info(),
+                to: ctx.accounts.creator_token_account.to_account_info(),
+                authority: raffle.to_account_info(),
+            };
+            token::transfer(CpiContext::new_with_signer(ctx.accounts.token_program.to_account_info(), refund_transfer, signer), ctx.accounts.vault_account.amount)?;
+        }
+
+        raffle.status = RaffleStatus::Cancelled;
+        Ok(())
+    }
+
+    pub fn assign_ticket_admin(ctx: Context<AssignTicketAdmin>, buyer: Pubkey, number: u8) -> Result<()> {
+        let raffle = &mut ctx.accounts.raffle;
         
+        if raffle.status != RaffleStatus::Active {
+            return err!(BCFError::RaffleNotActive);
+        }
+
+        if number >= 100 || raffle.slots[number as usize].is_some() {
+            return err!(BCFError::InvalidNumberSelection);
+        }
+
+        raffle.slots[number as usize] = Some(buyer);
+        raffle.total_tickets_sold += 1;
+        raffle.collected_funds += raffle.ticket_price;
+
         Ok(())
     }
 }
@@ -135,8 +223,6 @@ pub struct InitializeRaffle<'info> {
         bump
     )]
     pub raffle: Account<'info, Raffle>,
-
-    /// The vault PDA that will hold the tokens for this raffle
     #[account(
         init,
         payer = creator,
@@ -146,7 +232,6 @@ pub struct InitializeRaffle<'info> {
         token::authority = raffle,
     )]
     pub vault_account: Account<'info, TokenAccount>,
-
     pub mint: Account<'info, token::Mint>,
     #[account(mut)]
     pub creator: Signer<'info>,
@@ -178,21 +263,46 @@ pub struct BuyTicket<'info> {
 }
 
 #[derive(Accounts)]
-pub struct CommitRaffle<'info> {
-    #[account(mut, has_one = creator)]
-    pub raffle: Account<'info, Raffle>,
-    pub creator: Signer<'info>,
-    /// CHECK: Switchboard account
-    pub randomness_account: AccountInfo<'info>,
-}
-
-#[derive(Accounts)]
 pub struct SettleRaffle<'info> {
     #[account(mut)]
     pub raffle: Account<'info, Raffle>,
     /// CHECK: Switchboard account
     pub randomness_account: AccountInfo<'info>,
+}
+
+#[derive(Accounts)]
+pub struct ClaimUniversal<'info> {
+    #[account(mut)]
+    pub raffle: Account<'info, Raffle>,
+    #[account(mut)]
+    pub claimant: Signer<'info>,
+    #[account(mut, seeds = [b"vault", raffle.key().as_ref()], bump = raffle.vault_bump)]
+    pub vault_account: Account<'info, TokenAccount>,
+    #[account(mut)]
+    pub creator_token_account: Account<'info, TokenAccount>,
+    #[account(mut)]
+    pub winner_token_account: Account<'info, TokenAccount>,
     pub token_program: Program<'info, Token>,
+}
+
+#[derive(Accounts)]
+pub struct CancelRaffle<'info> {
+    #[account(mut, has_one = creator)]
+    pub raffle: Account<'info, Raffle>,
+    #[account(mut)]
+    pub creator: Signer<'info>,
+    #[account(mut, seeds = [b"vault", raffle.key().as_ref()], bump = raffle.vault_bump)]
+    pub vault_account: Account<'info, TokenAccount>,
+    #[account(mut)]
+    pub creator_token_account: Account<'info, TokenAccount>,
+    pub token_program: Program<'info, Token>,
+}
+
+#[derive(Accounts)]
+pub struct AssignTicketAdmin<'info> {
+    #[account(mut)]
+    pub raffle: Account<'info, Raffle>,
+    pub authority: Signer<'info>, // Protocol bot or Creator
 }
 
 #[account]
@@ -203,38 +313,46 @@ pub struct Raffle {
     pub start_time: i64,
     pub end_time: i64,
     pub expiry_time: i64,
+    pub created_at: i64,
     pub status: RaffleStatus,
-    pub description: String, // Max 50 chars
+    pub description: String,
     pub donation_address: Option<Pubkey>,
     pub total_tickets_sold: u64,
     pub collected_funds: u64,
     pub winning_number: Option<u8>,
     pub bump: u8,
     pub vault_bump: u8,
+    pub slots: [Option<Pubkey>; 100],
 }
 
 impl Raffle {
-    pub const MAX_SIZE: usize = 32 + 8 + 8 + 8 + 8 + 8 + 1 + 64 + 33 + 8 + 8 + 2 + 1 + 1;
+    pub const MAX_SIZE: usize = 32 + 8 + 8 + 8 + 8 + 8 + 1 + 64 + 33 + 8 + 8 + 2 + 1 + 1 + (100 * 33);
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq)]
 pub enum RaffleStatus {
     WaitingDeposit,
     Active,
-    Committing,
-    Closed,
     Resolved,
+    Closed,
     Cancelled,
 }
 
 #[error_code]
 pub enum BCFError {
-    #[msg("Vault balance is lower than the required prize amount.")]
+    #[msg("Insufficient prize deposit in vault.")]
     InsufficientPrizeDeposit,
-    #[msg("Raffle is not active or has expired.")]
+    #[msg("Raffle is not active.")]
     RaffleNotActive,
-    #[msg("Ticket number must be between 00 and 99.")]
+    #[msg("Invalid slot or already occupied.")]
     InvalidNumberSelection,
-    #[msg("Raffle duration has not ended yet.")]
+    #[msg("Raffle still ongoing.")]
     RaffleStillOngoing,
+    #[msg("Raffle not resolved.")]
+    RaffleNotResolved,
+    #[msg("Unauthorized claimant.")]
+    UnauthorizedClaimant,
+    #[msg("Raffle cannot be cancelled in current state.")]
+    RaffleNotCancellable,
 }
+
