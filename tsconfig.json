@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "target": "es2020",
+    "module": "commonjs",
+    "lib": ["es2020"],
+    "declaration": true,
+    "strict": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "outDir": "dist",
+    "baseUrl": ".",
+    "paths": {
+      "@coral-xyz/anchor": ["node_modules/@coral-xyz/anchor"],
+      "*": ["node_modules/*"]
+    }
+  },
+  "include": ["tests/**/*.ts", "target/types/**/*.ts"],
+  "exclude": ["node_modules"]
+}
