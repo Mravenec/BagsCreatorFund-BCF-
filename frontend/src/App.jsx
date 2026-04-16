@@ -319,8 +319,6 @@ const MainApp = () => {
                 ))}
               </div>
             </div>
-               </button>
-            </div>
           </aside>
         </div>
       </main>
