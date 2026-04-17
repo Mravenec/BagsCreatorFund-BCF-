@@ -1,21 +1,22 @@
 {
   "compilerOptions": {
-    "target": "es2020",
-    "module": "commonjs",
-    "lib": ["es2020"],
-    "declaration": true,
-    "strict": true,
-    "esModuleInterop": true,
-    "resolveJsonModule": true,
+    "target": "ESNext",
+    "lib": ["DOM", "DOM.Iterable", "ESNext"],
+    "allowJs": true,
     "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "strict": false,
     "forceConsistentCasingInFileNames": true,
-    "outDir": "dist",
+    "module": "ESNext",
+    "moduleResolution": "Node",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
     "baseUrl": ".",
-    "paths": {
-      "@coral-xyz/anchor": ["node_modules/@coral-xyz/anchor"],
-      "*": ["node_modules/*"]
-    }
+    "types": ["node", "react", "react-dom"]
   },
-  "include": ["tests/**/*.ts", "target/types/**/*.ts"],
+  "include": ["src", "tests", "target/types"],
   "exclude": ["node_modules"]
 }
