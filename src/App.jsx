@@ -78,7 +78,8 @@ const MINT_ADDRESS = new PublicKey('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
 
 const MainApp = () => {
   const { connection } = useConnection();
-  const { publicKey, connected } = useWallet();
+  const wallet = useWallet();
+  const { publicKey, connected } = wallet;
   const [raffles, setRaffles] = useState([]);
   const [selectedRaffle, setSelectedRaffle] = useState(null);
   const [selectedNumber, setSelectedNumber] = useState(null);
@@ -100,14 +101,14 @@ const MainApp = () => {
 
   const program = useMemo(() => {
     try {
-      if (!idl || !PROGRAM_ID) return null;
-      const provider = new anchor.AnchorProvider(connection, { publicKey }, { preflightCommitment: 'processed' });
+      if (!idl || !PROGRAM_ID || !wallet.publicKey) return null;
+      const provider = new anchor.AnchorProvider(connection, wallet, { preflightCommitment: 'processed' });
       return new anchor.Program(idl, PROGRAM_ID, provider);
     } catch (err) {
       console.error("Critical: Failed to initialize Anchor Program", err);
       return null;
     }
-  }, [connection, publicKey]);
+  }, [connection, wallet]);
 
   const fetchRaffles = useCallback(async () => {
     try {
