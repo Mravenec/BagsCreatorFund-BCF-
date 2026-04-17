@@ -247,3 +247,16 @@ body {
   background: linear-gradient(90deg, var(--brand-primary), var(--brand-secondary));
   transition: width 0.5s ease;
 }
+
+/* Wallet Modal Cleanup - Prevent Duplicates Visuals */
+.wallet-adapter-modal-list {
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+.wallet-adapter-modal-button {
+  font-family: var(--font-display) !important;
+  font-weight: 900 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.1em !important;
+}

@@ -24,6 +24,7 @@ import {
   PhantomWalletAdapter, 
   SolflareWalletAdapter 
 } from '@solana/wallet-adapter-wallets';
+
 import { 
   TrendingUp, 
   Plus, 
@@ -77,7 +78,7 @@ const MINT_ADDRESS = new PublicKey('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
 
 const MainApp = () => {
   const { connection } = useConnection();
-  const { publicKey, connected, sendTransaction } = useWallet();
+  const { publicKey, connected } = useWallet();
   const [raffles, setRaffles] = useState([]);
   const [selectedRaffle, setSelectedRaffle] = useState(null);
   const [selectedNumber, setSelectedNumber] = useState(null);
@@ -309,13 +310,15 @@ const MainApp = () => {
           </div>
           
           <div className="hidden lg:flex items-center gap-10">
-            <button 
-              onClick={() => setShowCreateModal(true)}
-              className="group flex items-center gap-4 text-[11px] font-black uppercase tracking-widest text-brand-primary hover:text-white transition-all bg-brand-primary/10 px-6 py-3 rounded-2xl hover:bg-brand-primary/20"
-            >
-               <Plus className="w-4 h-4" /> LAUNCH ROUND
-            </button>
-            <WalletMultiButton className="!bg-brand-primary/10 !hover:bg-brand-primary !h-14 !rounded-2xl !text-[11px] !font-black !px-8 transition-all border border-brand-primary/20 hover:border-brand-primary" />
+            <div className="flex items-center gap-6">
+              <WalletMultiButton className="!bg-brand-primary !h-12 !px-8 !rounded-2xl !text-[10px] !font-black !uppercase !tracking-widest hover:!scale-105 transition-all !border-none !shadow-lg !shadow-brand-primary/20" />
+              <button 
+                onClick={() => setShowCreateModal(true)}
+                className="w-12 h-12 bg-brand-primary rounded-2xl flex items-center justify-center text-white shadow-lg shadow-brand-primary/20 hover:scale-110 active:scale-95 transition-all"
+              >
+                <Plus className="w-6 h-6" />
+              </button>
+            </div>
           </div>
         </div>
       </nav>
@@ -737,7 +740,11 @@ const MainApp = () => {
 const BCFAppWrapper = () => {
   const network = 'devnet';
   const endpoint = useMemo(() => clusterApiUrl(network), [network]);
-  const wallets = useMemo(() => [new PhantomWalletAdapter(), new SolflareWalletAdapter()], []);
+  
+  const wallets = useMemo(() => [
+    new PhantomWalletAdapter(), 
+    new SolflareWalletAdapter(),
+  ], []);
 
   return (
     <ConnectionProvider endpoint={endpoint}>
