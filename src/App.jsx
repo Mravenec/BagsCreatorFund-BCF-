@@ -55,7 +55,10 @@ import {
   Target,
   Globe,
   Link,
-  Loader2
+  Loader2,
+  FileText,
+  Sparkles,
+  ChevronDown
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import * as anchor from "@coral-xyz/anchor";
@@ -291,23 +294,22 @@ const MainApp = () => {
 
   return (
     <div className="min-h-screen relative font-main selection:bg-brand-primary/30 text-white overflow-x-hidden">
-      {/* Dynamic Background */}
-      <div className="fixed inset-0 pointer-events-none -z-10 bg-[#09090b]">
+      <div className="fixed inset-0 pointer-events-none -z-10 overflow-hidden bg-[#030712]">
         <motion.div 
           animate={{ 
             scale: [1, 1.2, 1],
             opacity: [0.1, 0.15, 0.1] 
           }}
           transition={{ duration: 10, repeat: Infinity }}
-          className="absolute top-[10%] left-[10%] w-[800px] h-[800px] bg-brand-primary/20 rounded-full blur-[180px]" 
+          className="absolute top-[-10%] right-[-10%] w-[800px] h-[800px] bg-brand-primary/10 rounded-full blur-[180px]" 
         />
-        <div className="absolute bottom-[10%] right-[10%] w-[600px] h-[600px] bg-brand-secondary/10 rounded-full blur-[150px]" />
+        <div className="absolute bottom-[-10%] left-[-10%] w-[600px] h-[600px] bg-brand-secondary/5 rounded-full blur-[150px]" />
       </div>
 
-      <nav className="sticky top-0 z-100 glass px-8 py-6 border-b border-white/5 shadow-2xl backdrop-blur-3xl">
+      <nav className="sticky top-0 z-100 glass px-12 py-6 shadow-2xl backdrop-blur-3xl">
         <div className="max-w-7xl mx-auto flex justify-between items-center">
           <div className="flex items-center gap-6 cursor-pointer group" onClick={() => setSelectedRaffle(null)}>
-            <div className="w-14 h-14 bg-gradient-to-br from-brand-primary to-purple-600 rounded-3xl flex items-center justify-center shadow-[0_0_40px_rgba(168,85,247,0.4)] group-hover:scale-110 transition-all duration-500">
+            <div className="w-14 h-14 bg-gradient-to-br from-brand-primary to-purple-600 rounded-2xl flex items-center justify-center shadow-[0_0_40px_rgba(168,85,247,0.4)] transition-all duration-500 group-hover:scale-110">
                <Gem className="text-white w-8 h-8" />
             </div>
             <div className="space-y-1">
@@ -323,10 +325,10 @@ const MainApp = () => {
           
           <div className="hidden lg:flex items-center gap-10">
             <div className="flex items-center gap-6">
-              <WalletMultiButton className="!bg-brand-primary !h-12 !px-8 !rounded-2xl !text-[10px] !font-black !uppercase !tracking-widest hover:!scale-105 transition-all !border-none !shadow-lg !shadow-brand-primary/20" />
+              <WalletMultiButton className="!bg-brand-primary !h-12 !px-8 !rounded-2xl !text-[10px] !font-black !uppercase !tracking-widest !border-none !shadow-lg !shadow-brand-primary/20 transition-all hover:!scale-105" />
               <button 
                 onClick={() => setShowCreateModal(true)}
-                className="w-12 h-12 bg-brand-primary rounded-2xl flex items-center justify-center text-white shadow-lg shadow-brand-primary/20 hover:scale-110 active:scale-95 transition-all"
+                className="w-12 h-12 bg-brand-primary rounded-2xl flex items-center justify-center text-white shadow-lg shadow-brand-primary/20 transition-all hover:scale-110 active:scale-95"
               >
                 <Plus className="w-6 h-6" />
               </button>
@@ -346,21 +348,21 @@ const MainApp = () => {
                 exit={{ opacity: 0, y: -40 }}
                 className="max-w-7xl mx-auto space-y-24"
               >
-                <header className="space-y-10">
+                <header className="space-y-12">
                    <motion.div 
                     initial={{ opacity: 0, x: -20 }}
                     animate={{ opacity: 1, x: 0 }}
                     className="inline-flex items-center gap-4 bg-white/5 border border-white/10 px-8 py-3 rounded-full backdrop-blur-md"
                    >
                       <Target className="w-5 h-5 text-brand-primary animate-pulse" />
-                      <span className="text-[11px] font-black uppercase tracking-[0.4em] text-gray-400 italic">Hackathon Bootstrap Arena</span>
+                      <span className="text-[11px] font-black uppercase tracking-[0.4em] text-gray-400 italic">Infrastructure Arena</span>
                    </motion.div>
-                   <h2 className="text-9xl font-display font-black uppercase tracking-tighter italic leading-[0.8] drop-shadow-2xl">
+                   <h2 className="text-[9.5rem] font-display font-black uppercase tracking-tighter italic leading-[0.75] drop-shadow-2xl">
                      Build Your<br />
-                     <span className="text-brand-primary bg-clip-text text-transparent bg-gradient-to-r from-brand-primary to-purple-400">Dream Fund.</span>
+                     <span className="text-brand-primary bg-clip-text text-transparent bg-gradient-to-r from-brand-primary via-purple-400 to-brand-secondary">Dream Fund.</span>
                    </h2>
-                   <p className="text-gray-400 text-xl font-main italic max-w-3xl leading-relaxed">
-                     A decentralized funding protocol where creators launch high-stakes bootstrap rounds. Back projects, win prizes, and redefine Solana creator finance.
+                   <p className="text-gray-500 text-2xl font-main italic max-w-4xl leading-relaxed">
+                     A decentralized funding protocol where creators launch high-stakes rounds. Back projects, secure prizes, and redefine the Solana creator economy.
                    </p>
                 </header>
 
@@ -406,37 +408,38 @@ const MainApp = () => {
                 </button>
 
                 <div className="flex flex-col lg:flex-row justify-between items-start gap-12">
-                  <div className="flex-1 space-y-10">
-                     <div className="flex gap-4">
-                        <span className="glass bg-brand-primary/10 px-6 py-2 rounded-full text-[11px] font-black uppercase tracking-widest text-brand-primary italic shadow-lg">
-                          PDA: {selectedRaffle.pubkey.slice(0, 8)}...
+                  <div className="flex-1 space-y-12">
+                     <div className="flex gap-6">
+                        <span className="glass bg-brand-primary/10 px-8 py-3 rounded-full text-[12px] font-black uppercase tracking-[0.3em] text-brand-primary italic shadow-[0_0_20px_rgba(168,85,247,0.2)]">
+                          PDA: {selectedRaffle.pubkey.slice(0, 12)}...
                         </span>
                         {selectedRaffle.status === 'waitingDeposit' && (
-                          <span className="glass bg-yellow-500/10 px-6 py-2 rounded-full text-[11px] font-black uppercase tracking-widest text-yellow-500 italic animate-pulse">
-                            Waiting Bootstrap
+                          <span className="glass bg-yellow-500/10 px-8 py-3 rounded-full text-[12px] font-black uppercase tracking-[0.4em] text-yellow-500 italic animate-pulse">
+                            AWAITING FUNDING
                           </span>
                         )}
                      </div>
-                     <h1 className="text-8xl font-display font-black uppercase italic tracking-tighter leading-none">
+                     <h1 className="text-[10rem] font-display font-black uppercase italic tracking-tighter leading-[0.75] drop-shadow-3xl">
                        {selectedRaffle.description}
                      </h1>
-                     <div className="flex items-center gap-5 opacity-60 bg-white/5 w-fit px-8 py-4 rounded-3xl border border-white/5">
-                        <div className="w-12 h-12 rounded-2xl glass flex items-center justify-center font-black text-brand-primary italic">BC</div>
+                     <div className="flex items-center gap-6 opacity-60 bg-white/5 w-fit px-10 py-6 rounded-[2.5rem] border border-white/5 hover:bg-white/10 transition-all">
+                        <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-brand-primary/20 to-brand-primary/10 flex items-center justify-center font-black text-brand-primary italic text-xl border border-brand-primary/20">BC</div>
                         <div className="space-y-1">
-                          <p className="text-[12px] font-black uppercase tracking-[0.3em] italic">Project Lead</p>
-                          <p className="text-[10px] text-gray-500">{selectedRaffle.creator}</p>
+                          <p className="text-[14px] font-black uppercase tracking-[0.4em] italic text-gray-400">Project Architect</p>
+                          <p className="text-[11px] text-gray-500 font-mono tracking-widest">{selectedRaffle.creator}</p>
                         </div>
                      </div>
                   </div>
 
-                  <div className="glass-card p-12 space-y-6 border-brand-secondary/30 min-w-[360px] shadow-3xl bg-black/40">
-                     <div className="text-[12px] font-black uppercase tracking-[0.4em] text-gray-500 italic">Prize Pool Goal</div>
-                     <div className="text-7xl font-display font-black text-brand-secondary italic tracking-tighter">
-                        {selectedRaffle.prizePool} <span className="text-3xl text-white/30">$USDC</span>
+                  <div className="glass-card p-16 space-y-10 border-brand-secondary/20 min-w-[420px] shadow-4xl bg-black/60 relative overflow-hidden group">
+                     <div className="absolute top-0 right-0 w-32 h-32 bg-brand-secondary/5 rounded-full blur-3xl group-hover:bg-brand-secondary/10 transition-all duration-1000" />
+                     <div className="text-[14px] font-black uppercase tracking-[0.6em] text-gray-500 italic">Target Liquidity</div>
+                     <div className="text-[6.5rem] font-display font-black text-brand-secondary italic tracking-tighter leading-none">
+                        {selectedRaffle.prizePool} <span className="text-3xl text-white/20 font-black">BAGS</span>
                      </div>
-                     <div className="pt-8 mt-4 border-t border-white/10 flex justify-between items-center text-[12px] font-black uppercase tracking-widest">
-                        <span className="text-gray-500 italic">Ticket Fee</span>
-                        <span className="text-2xl text-white">{selectedRaffle.ticketPrice} USDC</span>
+                     <div className="pt-12 mt-6 border-t border-white/5 flex justify-between items-center text-[14px] font-black uppercase tracking-[0.4em]">
+                        <span className="text-gray-600 italic">Participation Fee</span>
+                        <span className="text-3xl text-white font-display font-black italic">{selectedRaffle.ticketPrice} <span className="text-sm opacity-30">BAGS</span></span>
                      </div>
                   </div>
                 </div>
@@ -455,15 +458,15 @@ const MainApp = () => {
                         )}
 
                         <header className="flex justify-between items-center mb-16">
-                           <div className="space-y-3">
-                             <h3 className="text-[14px] font-black uppercase tracking-[0.4em] text-brand-primary italic flex items-center gap-4">
-                                <QrCode className="w-6 h-6" /> SLOT MATRIX SELECTION
+                           <div className="space-y-6">
+                             <h3 className="text-[18px] font-black uppercase tracking-[0.5em] text-brand-primary italic flex items-center gap-4">
+                                <Zap className="w-6 h-6 animate-pulse" /> SLOT MATRIX INFRASTRUCTURE
                              </h3>
-                             <p className="text-[11px] text-gray-500 italic font-black uppercase tracking-widest">Each slot is an immutable entry on the Solana ledger.</p>
+                             <p className="text-[12px] text-gray-600 italic font-black uppercase tracking-[0.4em]">Each slot represents an immutable on-chain funding commitment.</p>
                            </div>
-                           <div className="bg-brand-primary/10 px-8 py-4 rounded-[2rem] border border-brand-primary/20">
-                              <div className="flex items-center gap-4 text-brand-primary text-[14px] font-black uppercase tracking-[0.3em] italic">
-                                 <Clock className="w-5 h-5 animate-pulse" /> 58:12
+                           <div className="bg-brand-primary/10 px-10 py-5 rounded-[2.5rem] border border-brand-primary/20 shadow-[0_0_30px_rgba(168,85,247,0.1)]">
+                              <div className="flex items-center gap-4 text-brand-primary text-[16px] font-black uppercase tracking-[0.4em] italic">
+                                 <Clock className="w-6 h-6" /> {timeLeft || '--:--'}
                               </div>
                            </div>
                         </header>
@@ -521,7 +524,7 @@ const MainApp = () => {
                             animate={{ opacity: 1, y: 0 }}
                             className="bg-brand-primary/10 border border-brand-primary/40 rounded-[3rem] p-12 space-y-10 shadow-4xl"
                           >
-                             <div className="space-y-4">
+                             <div className="space-y-6">
                                 <p className="text-[12px] font-black uppercase text-brand-primary tracking-[0.5em] italic">LOCKING SLOT</p>
                                 <p className="text-9xl font-display font-black italic tracking-tighter leading-none">#{selectedNumber.toString().padStart(2, '0')}</p>
                              </div>
@@ -592,12 +595,12 @@ const MainApp = () => {
                             <div className="flex items-center gap-4 text-2xl font-display font-black italic">USDC <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-[10px] text-white">S</div></div>
                          </div>
                          <div className="flex justify-between items-center">
-                            <span className="text-[12px] font-black uppercase tracking-widest text-gray-500 italic">Exact Amount</span>
-                            <span className="text-5xl font-display font-black text-brand-secondary italic">{(selectedRaffle?.ticketPrice || 0).toFixed(2)}</span>
+                            <span className="text-[14px] font-black uppercase tracking-[0.4em] text-gray-500 italic">FUNDING COMMITMENT</span>
+                            <span className="text-[7rem] font-display font-black text-brand-secondary italic leading-none drop-shadow-2xl">{(selectedRaffle?.ticketPrice || 0).toFixed(2)}</span>
                          </div>
-                         <div className="bg-red-500/10 p-8 rounded-3xl border border-red-500/20 flex gap-6">
-                            <AlertCircle className="w-10 h-10 text-red-500 shrink-0" />
-                            <p className="text-[11px] text-red-300 font-main italic leading-relaxed uppercase tracking-widest">Withdrawal fees must be added on top. System verifies exact arrival amount.</p>
+                         <div className="bg-red-500/10 p-10 rounded-[3rem] border border-red-500/20 flex gap-8 shadow-[0_0_40px_rgba(239,68,68,0.1)]">
+                            <AlertCircle className="w-12 h-12 text-red-500 shrink-0" />
+                            <p className="text-[12px] text-red-300 font-main italic leading-relaxed uppercase tracking-[0.4em]">Network verification requires exact arrival. Account for withdrawal gas fees.</p>
                          </div>
                       </div>
                    </div>
@@ -630,144 +633,221 @@ const MainApp = () => {
              </motion.div>
           </div>
         )}
-
-        {/* CREATE RAFFLE MODAL (WIZARD) */}
         {showCreateModal && (
           <div className="fixed inset-0 z-200 flex items-center justify-center p-8 bg-black/95 backdrop-blur-3xl overflow-y-auto">
              <motion.div 
-               initial={{ opacity: 0, y: 50 }} 
-               animate={{ opacity: 1, y: 0 }}
-               exit={{ opacity: 0, y: 30 }}
-               className="glass-card !bg-bg-dark p-16 max-w-4xl w-full relative shadow-4xl my-auto"
+               initial={{ opacity: 0, scale: 0.95, y: 20 }} 
+               animate={{ opacity: 1, scale: 1, y: 0 }}
+               exit={{ opacity: 0, scale: 0.95, y: 20 }}
+               className="glass-card !bg-bg-dark/98 p-10 w-[450px] space-y-10 shadow-[0_0_150px_rgba(0,0,0,0.9)] border-white/5 relative overflow-hidden backdrop-blur-3xl"
              >
-                <header className="flex justify-between items-start mb-16">
-                   <div className="space-y-6">
-                     <span className="text-brand-primary text-[14px] font-black uppercase tracking-[0.6em] italic">Step {createStep} of 3</span>
-                     <h2 className="text-8xl font-display font-black italic tracking-tighter leading-none uppercase">
-                        {createStep === 1 ? 'Configure' : createStep === 2 ? 'Fund' : 'Success'}<br />
-                        <span className="text-brand-primary">Round</span>
-                     </h2>
-                   </div>
-                   <button onClick={() => { setShowCreateModal(false); setCreateStep(1); }} className="w-16 h-16 glass rounded-full flex items-center justify-center"><X /></button>
-                </header>
+                {/* Visual Polish - Ambient Glows */}
+                <div className="absolute -top-32 -left-32 w-64 h-64 bg-brand-primary/10 rounded-full blur-[100px] pointer-events-none" />
+                <div className="absolute -bottom-32 -right-32 w-64 h-64 bg-brand-secondary/10 rounded-full blur-[100px] pointer-events-none" />
 
-                {createStep === 1 && (
-                  <div className="grid md:grid-cols-2 gap-16">
-                    <div className="space-y-12">
-                       <div className="space-y-4">
-                          <label className="text-[12px] font-black uppercase tracking-[0.4em] text-gray-500 italic ml-6">Prize Pool ($USDC)</label>
-                          <div className="relative group">
-                             <input 
-                                type="number" 
-                                value={newRaffleInfo.prizeAmount}
-                                onChange={(e) => setNewRaffleInfo({...newRaffleInfo, prizeAmount: e.target.value})}
-                                className="w-full glass !bg-white/5 rounded-[2.5rem] p-10 text-5xl font-display font-black text-brand-secondary italic outline-none focus:border-brand-primary transition-all group-hover:bg-white/10"
-                             />
-                             <DollarSign className="absolute right-10 top-1/2 -translate-y-1/2 text-brand-secondary opacity-30" size={32} />
-                          </div>
+                <header className="relative z-10 flex flex-col items-center">
+                    <div className="flex items-center justify-between w-full mb-8">
+                       <div className="flex gap-1.5">
+                          {[1, 2, 3].map((s) => (
+                            <div key={s} className="relative h-1 w-12 bg-white/5 rounded-full overflow-hidden">
+                               <motion.div 
+                                 initial={false}
+                                 animate={{ x: createStep >= s ? 0 : -50 }}
+                                 className="absolute inset-0 bg-brand-primary shadow-[0_0_10px_#8b5cf6]"
+                               />
+                            </div>
+                          ))}
                        </div>
-                       <div className="space-y-4">
-                          <label className="text-[12px] font-black uppercase tracking-[0.4em] text-gray-500 italic ml-6">Cost Per Slot ($USDC)</label>
-                          <input 
-                              type="number" 
-                              value={newRaffleInfo.ticketPrice}
-                              onChange={(e) => setNewRaffleInfo({...newRaffleInfo, ticketPrice: e.target.value})}
-                              className="w-full glass !bg-white/5 rounded-[2.5rem] p-8 text-2xl font-display font-black italic outline-none focus:border-brand-primary transition-all"
-                           />
-                       </div>
-                       <div className="space-y-4">
-                          <label className="text-[12px] font-black uppercase tracking-[0.4em] text-gray-500 italic ml-6">Duración (Horas)</label>
-                          <input 
-                              type="number" 
-                              value={newRaffleInfo.durationHours}
-                              onChange={(e) => setNewRaffleInfo({...newRaffleInfo, durationHours: e.target.value})}
-                              className="w-full glass !bg-white/5 rounded-[2.5rem] p-8 text-2xl font-display font-black italic outline-none focus:border-brand-primary transition-all"
-                           />
-                       </div>
-                    </div>
-                    <div className="space-y-12">
-                       <div className="space-y-4">
-                          <label className="text-[12px] font-black uppercase tracking-[0.4em] text-gray-500 italic ml-6">Proyecto & Dirección de Donación (Opcional)</label>
-                          <input 
-                              placeholder="Address de donación (pública para el ganador)"
-                              value={newRaffleInfo.donationAddr}
-                              onChange={(e) => setNewRaffleInfo({...newRaffleInfo, donationAddr: e.target.value})}
-                              className="w-full glass !bg-white/5 rounded-[2rem] p-6 text-[10px] font-main italic outline-none focus:border-brand-primary mb-4"
-                          />
-                          <textarea 
-                             placeholder="¿Para qué es este fondo? Atrae a tu comunidad..."
-                             value={newRaffleInfo.description}
-                             onChange={(e) => setNewRaffleInfo({...newRaffleInfo, description: e.target.value})}
-                             className="w-full glass !bg-white/5 rounded-[2.5rem] p-10 text-lg font-main italic h-48 outline-none focus:border-brand-primary transition-all group-hover:bg-white/10 resize-none"
-                          />
-                       </div>
-                       <button 
-                          onClick={initializeRaffle}
-                          disabled={actionLoading}
-                          className="btn-primary w-full !py-10 !rounded-[2.5rem] text-[14px] flex items-center justify-center gap-4"
-                       >
-                          {actionLoading ? <Loader2 className="animate-spin" /> : 'INITIALIZE ON-CHAIN PDA'}
+                       <button onClick={() => { setShowCreateModal(false); setCreateStep(1); }} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-white/10 transition-colors">
+                          <X className="w-5 h-5 text-white/40 hover:text-white" />
                        </button>
                     </div>
-                  </div>
-                )}
+                    
+                    <div className="text-center space-y-1">
+                       <h2 className="text-3xl font-display font-black uppercase italic tracking-tighter leading-none">
+                            {createStep === 1 ? 'Configure' : createStep === 2 ? 'Funding' : 'Launch'} <span className="text-brand-primary">Round</span>
+                       </h2>
+                       <p className="text-[10px] font-black uppercase tracking-[0.5em] text-white/30 italic">Protocol Phase {createStep} of 3</p>
+                    </div>
+                 </header>
 
-                {createStep === 2 && (
-                  <div className="space-y-12 animate-in fade-in slide-in-from-bottom-5 duration-700">
-                     <div className="bg-yellow-500/10 border border-yellow-500/30 p-12 rounded-[3.5rem] space-y-10">
-                        <div className="flex flex-col md:flex-row justify-between items-center gap-10">
-                           <div className="space-y-4 flex-1">
-                              <h3 className="text-[14px] font-black uppercase tracking-[0.5em] text-yellow-500 italic">BOOTSTRAP DEPOSIT REQUIRED</h3>
-                              <p className="text-gray-400 font-main italic leading-relaxed">System is watching for the following deposit to activate the round. Once detected, the round starts automatically.</p>
+                <div className="relative z-10">
+                  {createStep === 1 && (
+                    <div className="space-y-12 animate-in fade-in slide-in-from-bottom-5">
+                        <div className="grid grid-cols-2 gap-10">
+                           <div className="space-y-6">
+                              <div className="flex items-center gap-2 ml-1 text-white/50">
+                                 <Trophy className="w-3 h-3" />
+                                 <label className="text-[10px] font-black uppercase tracking-widest italic">Prize Pool</label>
+                              </div>
+                              <div>
+                                 <input 
+                                    type="number" 
+                                    value={newRaffleInfo.prizeAmount}
+                                    onChange={(e) => setNewRaffleInfo({...newRaffleInfo, prizeAmount: e.target.value})}
+                                    className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-2xl font-display font-black italic tracking-tighter text-white focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary/50 transition-all outline-none"
+                                    placeholder="100"
+                                 />
+                                 <div className="text-[9px] font-black text-white/30 italic mt-5 text-right">BAGS</div>
+                              </div>
                            </div>
-                           <div className="text-right">
-                              <p className="text-8xl font-display font-black text-white italic tracking-tighter leading-none">{newRaffleInfo.prizeAmount} <span className="text-2xl opacity-40">USDC</span></p>
-                              <div className="mt-4 flex items-center justify-end gap-2 text-brand-secondary italic">
-                                 <Plus className="w-4 h-4" />
-                                 <span className="text-[10px] font-black uppercase tracking-widest">~0.002 SOL (Network Fees)</span>
+                           <div className="space-y-6">
+                              <div className="flex items-center gap-2 ml-1 text-white/50">
+                                 <Coins className="w-3 h-3" />
+                                 <label className="text-[10px] font-black uppercase tracking-widest italic">Slot Fee</label>
+                              </div>
+                              <div>
+                                 <input 
+                                    type="number" 
+                                    value={newRaffleInfo.ticketPrice}
+                                    onChange={(e) => setNewRaffleInfo({...newRaffleInfo, ticketPrice: e.target.value})}
+                                    className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-2xl font-display font-black italic tracking-tighter text-white focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary/50 transition-all outline-none"
+                                    placeholder="5"
+                                 />
+                                 <div className="text-[9px] font-black text-white/30 italic mt-5 text-right">BAGS</div>
                               </div>
                            </div>
                         </div>
-                        <div className="p-8 glass bg-brand-primary/10 border border-brand-primary/20 rounded-3xl text-center">
-                           <p className="text-[14px] font-black uppercase tracking-[0.2em] italic text-brand-primary">
-                              {vaultBalance >= newRaffleInfo.prizeAmount ? 'DEPOSIT VERIFIED' : `FALTAN: ${(newRaffleInfo.prizeAmount - vaultBalance).toFixed(2)} USDC`}
-                           </p>
-                        </div>
-                        <div className="p-10 glass !bg-black/50 border-white/10 rounded-[2.5rem]">
-                           <div className="text-[11px] font-black uppercase tracking-[0.4em] text-gray-600 mb-6 text-center">TARGET VAULT PDA ADDRESS</div>
-                           <div className="text-xl font-display font-black break-all text-center select-all">{newRaffleInfo.vaultAccount?.toString()}</div>
-                        </div>
-                     </div>
-                     <div className="flex flex-col items-center gap-8 py-10">
-                        <Loader2 className="w-12 h-12 text-brand-primary animate-spin" />
-                        <div className="text-center space-y-2">
-                           <p className="text-[12px] font-black uppercase tracking-[0.4em] text-brand-primary">MONITORING LEDGER</p>
-                           <p className="text-[10px] text-gray-600 font-black uppercase tracking-widest italic">Round activates instantly upon funding verification</p>
-                        </div>
-                     </div>
-                  </div>
-                )}
 
-                {createStep === 3 && (
-                   <div className="text-center space-y-12 py-20 animate-in zoom-in duration-1000">
-                      <div className="w-32 h-32 bg-brand-secondary/20 rounded-full flex items-center justify-center mx-auto shadow-4xl shadow-brand-secondary/30">
-                         <CheckCircle2 className="w-16 h-16 text-brand-secondary" />
-                      </div>
-                      <div className="space-y-4">
-                         <h3 className="text-7xl font-display font-black italic tracking-tighter uppercase">ROUND ACTIVATED</h3>
-                         <p className="text-gray-500 text-[14px] font-black uppercase tracking-[0.4em] italic">Fundraising pool is now open to the public</p>
-                      </div>
-                      <button 
-                         onClick={() => { setShowCreateModal(false); setCreateStep(1); }}
-                         className="btn-primary px-20 py-8 !rounded-[2.5rem]"
-                      >
-                         ENTER HUB
-                      </button>
-                   </div>
-                )}
+                        <div className="space-y-6">
+                           <div className="flex items-center gap-2 ml-1 text-white/50">
+                              <Clock className="w-3 h-3" />
+                              <label className="text-[10px] font-black uppercase tracking-widest italic">Time Horizon</label>
+                           </div>
+                           <div className="relative group">
+                              <select 
+                                value={newRaffleInfo.durationHours}
+                                onChange={(e) => setNewRaffleInfo({...newRaffleInfo, durationHours: parseInt(e.target.value)})}
+                                className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-[13px] font-black uppercase tracking-widest italic text-white/80 focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary/50 transition-all outline-none appearance-none cursor-pointer"
+                              >
+                                <option value="1" className="bg-bg-dark text-brand-secondary">1 Hour • Quick Strike</option>
+                                <option value="24" className="bg-bg-dark text-brand-primary">24 Hours • Daily Cycle</option>
+                                <option value="72" className="bg-bg-dark text-blue-400">72 Hours • Extended Pulse</option>
+                                <option value="168" className="bg-bg-dark text-orange-400">168 Hours • Weekly Vision</option>
+                              </select>
+                              <div className="absolute right-5 top-1/2 -translate-y-1/2 pointer-events-none opacity-40">
+                                 <motion.div animate={{ y: [0, 2, 0] }} transition={{ repeat: Infinity, duration: 2 }}>
+                                    <ChevronDown className="w-4 h-4" />
+                                 </motion.div>
+                              </div>
+                           </div>
+                        </div>
+
+                        <div className="space-y-3">
+                           <div className="flex items-center gap-2 ml-1 text-white/50">
+                              <Target className="w-3 h-3" />
+                              <label className="text-[10px] font-black uppercase tracking-widest italic">Beneficiary Chain Node</label>
+                           </div>
+                           <input 
+                              placeholder="Optional SOL Address..."
+                              value={newRaffleInfo.donationAddr}
+                              onChange={(e) => setNewRaffleInfo({...newRaffleInfo, donationAddr: e.target.value})}
+                              className="w-full bg-white/5 border border-white/10 rounded-xl px-5 py-4 text-[11px] font-mono text-white/60 focus:border-brand-primary/50 transition-all outline-none"
+                           />
+                        </div>
+
+                        <div className="space-y-3">
+                           <div className="flex items-center gap-2 ml-1 text-white/50">
+                              <FileText className="w-3 h-3" />
+                              <label className="text-[10px] font-black uppercase tracking-widest italic">Mission Manifesto</label>
+                           </div>
+                           <textarea 
+                              placeholder="Brief description of your funding goals..."
+                              value={newRaffleInfo.description}
+                              onChange={(e) => setNewRaffleInfo({...newRaffleInfo, description: e.target.value})}
+                              className="w-full bg-white/5 border border-white/10 rounded-xl px-5 py-4 text-[13px] text-white/80 focus:border-brand-primary/50 transition-all outline-none h-24 resize-none leading-relaxed"
+                           />
+                        </div>
+
+                        <div className="pt-12">
+                           <button 
+                              onClick={initializeRaffle}
+                              disabled={actionLoading}
+                              className="btn-primary w-full !py-5 !rounded-2xl flex items-center justify-center gap-3 shadow-2xl shadow-brand-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all"
+                           >
+                              {actionLoading ? <Loader2 className="animate-spin w-5 h-5 capitalize" /> : <> <Sparkles className="w-5 h-5" /> INITIALIZE ROUND </>}
+                           </button>
+                        </div>
+                    </div>
+                  )}
+
+                  {createStep === 2 && (
+                    <div className="space-y-12 animate-in zoom-in duration-700">
+                       <div className="flex flex-col items-center justify-center text-center space-y-6">
+                          <div className="relative">
+                             <div className="w-32 h-32 rounded-full border-4 border-dashed border-brand-primary/20 animate-spin-slow" />
+                             <div className="absolute inset-0 flex items-center justify-center">
+                                <motion.div 
+                                  animate={{ scale: [1, 1.1, 1] }} 
+                                  transition={{ repeat: Infinity, duration: 2 }}
+                                  className="w-16 h-16 bg-brand-primary/20 rounded-full flex items-center justify-center border border-brand-primary/40 shadow-[0_0_40px_rgba(168,85,247,0.4)]"
+                                >
+                                   <Zap className="w-7 h-7 text-brand-primary" />
+                                </motion.div>
+                             </div>
+                          </div>
+                          <div className="space-y-2">
+                             <h3 className="text-2xl font-display font-black uppercase italic tracking-tighter">Syncing Ledger</h3>
+                             <p className="text-gray-500 text-[10px] font-black uppercase tracking-[0.4em] italic">Awaiting deposit verification</p>
+                          </div>
+                       </div>
+
+                       <div className="flex flex-col gap-6 bg-white/5 p-8 rounded-[2rem] border border-white/10 relative overflow-hidden">
+                          <div className="space-y-4">
+                             <p className="text-[10px] font-black uppercase tracking-[0.4em] text-gray-600 italic">Required</p>
+                             <p className="text-5xl font-display font-black text-brand-secondary italic tracking-tighter">{newRaffleInfo.prizeAmount} <span className="text-sm opacity-30">BAGS</span></p>
+                             <div className="p-4 glass bg-brand-primary/10 rounded-xl text-center border-brand-primary/20">
+                                <p className="text-[9px] font-black uppercase tracking-[0.3em] text-brand-primary">STATUS</p>
+                                <p className="text-lg font-display font-black italic">
+                                   {vaultBalance >= newRaffleInfo.prizeAmount ? 'FUNDED' : `MISSING ${ (newRaffleInfo.prizeAmount - vaultBalance).toFixed(2) }`}
+                                </p>
+                             </div>
+                          </div>
+
+                          <div className="space-y-4">
+                             <p className="text-[10px] font-black uppercase tracking-[0.4em] text-gray-500 italic ml-4">VAULT PDA</p>
+                             <div className="glass bg-black/60 p-5 rounded-xl border border-white/10 space-y-4">
+                                <div className="text-[11px] font-mono break-all text-center select-all text-gray-400">
+                                   {newRaffleInfo.vaultAccount?.toString()}
+                                </div>
+                             </div>
+                          </div>
+                       </div>
+
+                       <div className="flex flex-col gap-4">
+                          <button onClick={() => { setShowCreateModal(false); setCreateStep(1); }} className="w-full py-4 glass hover:bg-white/5 rounded-xl text-[10px] font-black uppercase tracking-widest text-gray-500">ABANDON ROUND</button>
+                       </div>
+                    </div>
+                  )}
+
+                  {createStep === 3 && (
+                     <div className="text-center space-y-12 py-10 animate-in zoom-in-50 duration-1000">
+                        <div className="relative inline-block">
+                           <motion.div 
+                              initial={{ scale: 0 }} 
+                              animate={{ scale: 1 }} 
+                              className="w-32 h-32 bg-brand-secondary/20 rounded-full flex items-center justify-center border-2 border-brand-secondary/40 shadow-[0_0_80px_rgba(16,185,129,0.3)]"
+                           >
+                              <CheckCircle2 className="w-16 h-16 text-brand-secondary" />
+                           </motion.div>
+                        </div>
+                        <div className="space-y-4">
+                           <h3 className="text-5xl font-display font-black italic tracking-tighter uppercase leading-none text-white">ACTIVATED</h3>
+                           <p className="text-gray-500 text-[12px] font-black uppercase tracking-[0.4em] italic">Fundraising pool live</p>
+                        </div>
+                        <button 
+                           onClick={() => { setShowCreateModal(false); setCreateStep(1); setSelectedRaffle( raffles.find(r => r.pubkey === newRaffleInfo.rafflePda?.toString()) ); }}
+                           className="btn-primary w-full !py-6 !rounded-xl shadow-4xl shadow-brand-primary/20 transition-all hover:scale-110 active:scale-95 text-lg"
+                        >
+                           LAUNCH DASHBOARD
+                        </button>
+                     </div>
+                  )}
+                </div>
              </motion.div>
           </div>
         )}
+
       </AnimatePresence>
     </div>
   );

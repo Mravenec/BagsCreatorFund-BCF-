@@ -33,34 +33,37 @@ const RaffleCard = ({ raffle, onClick }) => {
       onClick={onClick}
     >
       <div className="flex justify-between items-start">
-        <div className="w-12 h-12 bg-white/5 rounded-2xl flex items-center justify-center border border-white/5 shadow-xl group-hover:border-brand-primary/30 transition-all">
-          <Coins className="text-brand-primary w-6 h-6" />
+        <div className="w-14 h-14 bg-white/5 rounded-2xl flex items-center justify-center border border-white/5 shadow-xl group-hover:border-brand-primary/30 group-hover:bg-brand-primary/10 transition-all duration-500">
+          <Coins className="text-brand-primary w-7 h-7" />
         </div>
-        {raffle.status === 'active' && <span className="text-[9px] font-black uppercase tracking-widest text-brand-secondary bg-brand-secondary/10 px-3 py-1.5 rounded-full border border-brand-secondary/20">Active</span>}
-        {raffle.status === 'waitingDeposit' && <span className="text-[9px] font-black uppercase tracking-widest text-yellow-500 bg-yellow-500/10 px-3 py-1.5 rounded-full border border-yellow-500/20 animate-pulse">Funding</span>}
-        {raffle.status === 'resolved' && <span className="text-[9px] font-black uppercase tracking-widest text-brand-primary bg-brand-primary/10 px-3 py-1.5 rounded-full border border-brand-primary/20">Results</span>}
+        <div className="flex flex-col items-end gap-2">
+          {raffle.status === 'active' && <span className="text-[10px] font-black uppercase tracking-[0.2em] text-brand-secondary bg-brand-secondary/10 px-4 py-2 rounded-full border border-brand-secondary/20 italic">Live Round</span>}
+          {raffle.status === 'waitingDeposit' && <span className="text-[10px] font-black uppercase tracking-[0.2em] text-yellow-500 bg-yellow-500/10 px-4 py-2 rounded-full border border-yellow-500/20 animate-pulse italic">Pending Funding</span>}
+          {raffle.status === 'resolved' && <span className="text-[10px] font-black uppercase tracking-[0.2em] text-brand-primary bg-brand-primary/10 px-4 py-2 rounded-full border border-brand-primary/20 italic">Settled</span>}
+        </div>
       </div>
 
-      <div className="space-y-3">
-        <h3 className="text-3xl font-display font-black tracking-tighter line-clamp-2 uppercase group-hover:text-brand-primary transition-colors italic">
+      <div className="space-y-4">
+        <h3 className="text-4xl font-display font-black tracking-tighter line-clamp-2 uppercase group-hover:text-brand-primary transition-colors italic leading-none">
           {raffle.description}
         </h3>
-        <div className="flex items-center gap-2 opacity-40">
-          <Users className="w-3.5 h-3.5" />
-          <span className="text-[10px] font-black uppercase tracking-widest">{raffle.creator}</span>
+        <div className="flex items-center gap-3 opacity-30 group-hover:opacity-60 transition-opacity">
+          <div className="w-6 h-6 rounded-lg bg-white/10 flex items-center justify-center text-[10px] font-black italic">ID</div>
+          <span className="text-[11px] font-black uppercase tracking-[0.3em] italic">{raffle.pubkey.slice(0, 8)}...</span>
         </div>
       </div>
 
-      <div className="space-y-5 pt-4 border-t border-white/5">
+      <div className="space-y-6 pt-6 border-t border-white/5">
         <div className="flex justify-between items-end">
-          <span className="text-[10px] uppercase font-black text-gray-500 tracking-widest italic">Prize Pool</span>
-          <span className="text-2xl font-display font-black text-brand-secondary italic">{raffle.prizePool} $BAGS</span>
-        </div>
-        <div className="space-y-2">
-          <div className="flex justify-between text-[10px] font-black uppercase tracking-widest">
-            <span className="text-gray-500 italic">Participation</span>
-            <span>{raffle.ticketsSold}%</span>
+          <div className="space-y-1">
+            <p className="text-[10px] uppercase font-black text-gray-600 tracking-[0.3em] italic">Current Pool</p>
+            <p className="text-3xl font-display font-black text-white italic tracking-tighter leading-none">{raffle.prizePool} <span className="text-sm opacity-30 italic font-black">BAGS</span></p>
           </div>
+          <div className="text-right space-y-1">
+             <p className="text-[10px] font-black uppercase tracking-widest text-brand-secondary italic">Liquidity</p>
+             <p className="text-xl font-display font-black text-brand-secondary italic">{raffle.ticketsSold}%</p>
+          </div>
+        </div>
           <div className="progress-container">
             <motion.div 
               initial={{ width: 0 }}
@@ -68,7 +71,6 @@ const RaffleCard = ({ raffle, onClick }) => {
               className="progress-fill"
             />
           </div>
-        </div>
       </div>
 
       <div className="flex items-center justify-between text-gray-500 group-hover:text-brand-primary transition-colors pt-4">
