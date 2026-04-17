@@ -318,3 +318,28 @@ input:focus, textarea:focus {
   border-color: var(--brand-primary);
   box-shadow: 0 0 0 4px rgba(139, 92, 246, 0.15);
 }
+
+/* Resolution & Grayout */
+.grayout-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(3, 7, 18, 0.85);
+  backdrop-filter: blur(8px);
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.resolved-state {
+  filter: grayscale(1) contrast(0.8) brightness(0.7);
+  pointer-events: none !important;
+  opacity: 0.8;
+}
+
+.winner-highlight {
+  background: rgba(16, 185, 129, 0.2);
+  border: 2px solid var(--brand-secondary);
+  box-shadow: 0 0 50px rgba(16, 185, 129, 0.4);
+}

@@ -29,7 +29,7 @@ const RaffleCard = ({ raffle, onClick }) => {
   return (
     <motion.div 
       whileHover={{ y: -8 }}
-      className="glass-card p-10 space-y-8 cursor-pointer relative overflow-hidden group"
+      className={`glass-card p-10 space-y-8 cursor-pointer relative overflow-hidden group ${raffle.status === 'resolved' || raffle.status === 'closed' ? 'resolved-state' : ''}`}
       onClick={onClick}
     >
       <div className="flex justify-between items-start">
@@ -57,7 +57,10 @@ const RaffleCard = ({ raffle, onClick }) => {
         <div className="flex justify-between items-end">
           <div className="space-y-1">
             <p className="text-[10px] uppercase font-black text-gray-600 tracking-[0.3em] italic">Current Pool</p>
-            <p className="text-3xl font-display font-black text-white italic tracking-tighter leading-none">{raffle.prizePool} <span className="text-sm opacity-30 italic font-black">BAGS</span></p>
+            <div className="flex items-end gap-3">
+              <p className="text-3xl font-display font-black text-white italic tracking-tighter leading-none">{raffle.prizePool} <span className="text-sm opacity-30 italic font-black">BAGS</span></p>
+              <p className="text-[10px] font-black text-brand-primary/60 mb-1 uppercase tracking-widest italic">≈ ${(raffle.prizePool * (raffle.bagsPrice || 0.12)).toFixed(2)} USDC</p>
+            </div>
           </div>
           <div className="text-right space-y-1">
              <p className="text-[10px] font-black uppercase tracking-widest text-brand-secondary italic">Liquidity</p>
