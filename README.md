@@ -1,4 +1,4 @@
-# 🎟️ BagsCreatorFund (BCF)
+# 🎟️ BagsCreatorFund (BCF).
 
 > **"The Infrastructure for Trustless Creator Funding on Solana."**
 
@@ -10,9 +10,11 @@ BagsCreatorFund (BCF) is a decentralized, on-chain funding protocol designed for
 
 - **App Name**: BagsCreatorFund (BCF)
 - **Category**: Creator Finance (CreatorFi)
+- **Track**: Bags Ecosystem Innovation / Creator Finance
 - **Token Integration**: $BAGS, USDC.
-- **Track**: Bags Ecosystem Innovation
-- **Differentiator**: 100% Trustless Activation & CEX-Compatible Payouts.
+- **GitHub**: [Link to this repository]
+- **Website**: [Demo URL]
+- **Contact**: [@BagsHackathon](https://x.com/BagsHackathon)
 
 ---
 
@@ -20,10 +22,10 @@ BagsCreatorFund (BCF) is a decentralized, on-chain funding protocol designed for
 
 BCF turns traditional fundraising into a high-stakes participation event:
 1. **Creator Bait**: The creator locks the prize (e.g., $100 USDC) into a dedicated **Vault PDA**.
-2. **Trustless Activation**: The Smart Contract verifies the balance and activates the round. No middleman needed.
+2. **Trustless Activation**: The Smart Contract verifies the balance and activates the round automatically. No manual intervention.
 3. **Smart Distribution**: 
    - **Winner Found**: Participant takes the Prize; Creator takes 100% of Ticket Revenue.
-   - **No Winner (Unsold Slot)**: Creator takes **Everything** (Prize + Ticket Revenue).
+   - **No Winner (Unsold Slot)**: Creator takes **Everything** (Prize + Ticket Revenue), rewarding the creator for the "bait" risk.
 
 ---
 
@@ -35,8 +37,8 @@ Unlike basic raffles, BCF contracts are the source of truth. The `activate_raffl
 ### 2. CEX Bridge (Web2 User-Friendly)
 BCF solves the "Centralized Exchange problem" for Binance and Coinbase users:
 - **Unique Vault PDAs**: Each raffle has a unique on-chain vault address, eliminating mapping errors.
-- **On-Chain Payout Registration**: Users without Web3 wallets can register their "Destination Wallet" on-chain during the participation flow, ensuring prizes are sent automatically to their exchange/payout address.
-- **Real-Time Funding Status**: The UI displays exactly how much is missing ("Faltan $XX.XX USDC") by monitoring the ledger directly.
+- **Source Identification**: Creators can specify a "Source Wallet" for deposits without needing to connect a Web3 wallet (Zero-Touch Flow).
+- **Instructional UI**: The platform provides clear instructions on exactly how much to send (Prize + Fees) to trigger activation.
 
 ### 3. Verifiable Randomness
 Powered by **Switchboard On-Demand**. The winning number (0-99) is generated via a VDF-based oracle, ensuring even the creator cannot predict the outcome.
@@ -45,20 +47,8 @@ Powered by **Switchboard On-Demand**. The winning number (0-99) is generated via
 
 ## 💎 Bags Ecosystem Integration
 - **$BAGS Native**: Designed to use $BAGS as the primary currency for high-tier raffles.
+- **Bags SDK**: Fully integrated for potential token launching and creator profiles.
 - **Creator Royalties**: Revenue is distributed directly to creators, empowering the "Bags Creator" economy.
-- **Trustless Refunds**: If a raffle isn't funded within the 24-hour window, creators can withdraw their funds trustlessly.
-
----
-
-## 📦 Project Structure
-```text
-BagsCreatorFund (BCF)/
-├── programs/           # Solana Anchor Program (Rust)
-├── src/                # React (Neo-Glassmorphism UI)
-├── src/components/     # Modular 10x10 Matrix & UI Kits
-├── src/bcf_core.json   # Synchronized IDL
-└── README.md           # Documentation
-```
 
 ---
 
@@ -69,10 +59,24 @@ BagsCreatorFund (BCF)/
 
 ---
 
-## 🎬 Demo & Contact
-- **Website**: [Demo URL Placeholder]
-- **Bags Profile**: [Bags Link Placeholder]
-- **X (Twitter)**: [@BagsHackathon](https://x.com/BagsHackathon)
+## 📖 How to Use
+
+### For Creators:
+1. Click **"Initialize New Round"**.
+2. Set your prize pool, ticket cost, and duration.
+3. Decide whether to show a donation address for winners.
+4. Fund the **Vault PDA** provided by the system.
+5. Once funded, the round goes **LIVE** automatically.
+
+### For Participants:
+1. **Web3**: Connect Phantom/Solflare and buy a slot directly.
+2. **CEX Bridge**: If you only have Binance/Coinbase, follow the instructions to send the exact ticket fee to the raffle address. The protocol node detects the transaction and assigns you a slot.
+
+---
+
+## 🎬 Demo
+- **Demo Video**: [3-5 Minute Walkthrough Placeholder]
+- **Live Platform**: [Vercel/Netlify URL Placeholder]
 
 ---
 *Built for the Bags Hackathon. Empowering creators through on-chain game theory.*
