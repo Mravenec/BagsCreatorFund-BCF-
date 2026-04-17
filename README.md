@@ -1,4 +1,4 @@
-# 🎟️ BagsCreatorFund (BCF).
+# 🎟️ BagsCreatorFund (BCF)
 
 > **"The Infrastructure for Trustless Creator Funding on Solana."**
 
