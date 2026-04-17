@@ -1,89 +1,52 @@
 # 🎟️ BagsCreatorFund (BCF)
 
-> **"The Future of Risk-Based Creator Funding on Solana."**
+> **"The Infrastructure for Trustless Creator Funding on Solana."**
 
-BagsCreatorFund (BCF) is a trustless, decentralized funding protocol launched on **Bags**. It empowers creators to bootstrap their own liquidity by launching self-funded raffles where they provide the prize capital upfront to attract community participation and royalties.
+BagsCreatorFund (BCF) is a decentralized, on-chain funding protocol designed for the **Bags Hackathon**. It enables creators to bootstrap projects by providing an upfront prize (The "Bait") to attract community funding through highly transparent, trustless raffles.
 
 ---
 
 ## 🚀 Hackathon Submission Details
 
 - **App Name**: BagsCreatorFund (BCF)
-- **Category**: Creator Finance / DeFi
-- **Token Integration**: $BAGS (Native), SOL, USDC.
+- **Category**: Creator Finance (CreatorFi)
+- **Token Integration**: $BAGS, USDC.
 - **Track**: Bags Ecosystem Innovation
-- **Status**: Development / Hackathon Entry 2026
+- **Differentiator**: 100% Trustless Activation & CEX-Compatible Payouts.
 
 ---
 
-## 💡 The Problem
-Traditional crowdfunding often lacks excitement and direct incentives for small contributors. Creators need a way to gamify their fundraising while maintaining 100% transparency and trust.
+## 💡 The "Bait-and-Fund" Model
 
-## ✅ The BCF Solution
-BCF introduces the **"Bait-and-Fund"** model:
-1. **Creator Bait**: The creator locks a prize (e.g., $1000 in $BAGS) into a Solana PDA.
-2. **Community Participation**: Users buy tickets (e.g., $5) for a chance to win the prize.
-3. **Smart Payouts**: 
-   - If a sold number wins: Participant takes the prize; Creator takes all ticket revenue.
-   - If an unsold number wins: Creator takes **everything** (Original Prize + All Revenue).
+BCF turns traditional fundraising into a high-stakes participation event:
+1. **Creator Bait**: The creator locks the prize (e.g., $100 USDC) into a dedicated **Vault PDA**.
+2. **Trustless Activation**: The Smart Contract verifies the balance and activates the round. No middleman needed.
+3. **Smart Distribution**: 
+   - **Winner Found**: Participant takes the Prize; Creator takes 100% of Ticket Revenue.
+   - **No Winner (Unsold Slot)**: Creator takes **Everything** (Prize + Ticket Revenue).
 
 ---
 
-## 🛠️ Architecture (Pure Web3)
+## 🛠️ Advanced Technical Architecture
 
-### 1. Smart Contract (Anchor/Rust)
-The core logic resides in a Solana Program. It handles:
-- **Raffle PDAs**: Each raffle is an independent, secure account.
-- **Escrow Vaults**: Funds are locked until the verifiable random draw.
-- **Protocol Fees**: A 2.5% fee is distributed to the Bags ecosystem/treasury.
+### 1. Trustless On-Chain Activation
+Unlike basic raffles, BCF contracts are the source of truth. The `activate_raffle` instruction performs an on-chain verification of the `Vault PDA` balance. If the creator hasn't fully funded the prize, the round cannot start.
 
-### 2. CEX Bridge (Web2.5 UX)
-BCF is compatible with **Binance, Coinbase, and Phantom**.
-- **Unique Deposit Addresses (PDA)**: Every "Intent to Create/Participate" generates a unique Solana address.
-- **Mandatory Memo**: Users sending from CEXs use a mandatory memo (`raffle_id:user_id`) to map their payout identity.
-- **Unassigned Queue**: Deposits without memos are held for manual verification via TXID.
+### 2. CEX Bridge (Web2 User-Friendly)
+BCF solves the "Centralized Exchange problem" for Binance and Coinbase users:
+- **Unique Vault PDAs**: Each raffle has a unique on-chain vault address, eliminating mapping errors.
+- **On-Chain Payout Registration**: Users without Web3 wallets can register their "Destination Wallet" on-chain during the participation flow, ensuring prizes are sent automatically to their exchange/payout address.
+- **Real-Time Funding Status**: The UI displays exactly how much is missing ("Faltan $XX.XX USDC") by monitoring the ledger directly.
 
 ### 3. Verifiable Randomness
-Powered by **Switchboard VRF**. The winning number (00-99) is generated on-chain, preventing manipulation by the creator or the platform.
+Powered by **Switchboard On-Demand**. The winning number (0-99) is generated via a VDF-based oracle, ensuring even the creator cannot predict the outcome.
 
 ---
 
-## 🌐 Network Configuration
-
-To avoid conflicts during testing and deployment, BCF supports both environments:
-
-### 🧪 Testnet / Devnet (Current)
-- **RPC**: `https://api.devnet.solana.com`
-- **Program ID**: `BCF...` (To be deployed)
-- **VRF Authority**: Switchboard Devnet Oracle.
-- **Purpose**: Risk-free testing of the 10x10 matrix and payout logic.
-
-### 💎 Mainnet (Production)
-- **RPC**: `https://api.mainnet-beta.solana.com`
-- **Program ID**: `BCF...` (Pending Audit)
-- **VRF Authority**: Switchboard Mainnet Oracle.
-- **Purpose**: Real $BAGS funding and high-stakes creator participation.
-
----
-
-## 🔁 User Journey
-
-### For Creators
-1. **Define**: Prize amount, ticket cost, and duration.
-2. **Fund**: Send funds from Phantom or Binance to the generated PDA + required Memo.
-3. **Activate**: Once confirmed on-chain, the raffle goes live to the Bags community.
-
-### For Participants
-1. **Select**: Choose a lucky number from the 00-99 matrix.
-2. **Pay**: One-click buy via Phantom or direct transfer from CEX.
-3. **Win**: Receive payouts automatically if your number is drawn by the Oracle.
-
----
-
-## 💰 Fees & Sustainability
-- **Protocol Fee**: 2.5% per ticket sold.
-- **Creator Royalties**: Enabled via Bags SDK integration.
-- **Anti-Ghosting**: Raffles not funded within 1 hour of creation are automatically cancelled and funds returned to the creator.
+## 💎 Bags Ecosystem Integration
+- **$BAGS Native**: Designed to use $BAGS as the primary currency for high-tier raffles.
+- **Creator Royalties**: Revenue is distributed directly to creators, empowering the "Bags Creator" economy.
+- **Trustless Refunds**: If a raffle isn't funded within the 24-hour window, creators can withdraw their funds trustlessly.
 
 ---
 
@@ -91,26 +54,25 @@ To avoid conflicts during testing and deployment, BCF supports both environments
 ```text
 BagsCreatorFund (BCF)/
 ├── programs/           # Solana Anchor Program (Rust)
-├── frontend/           # React + Vite (Neo-Glass UI)
-├── tests/              # Anchor Integration Tests
-├── target/             # Compiled BPF binaries
-└── README.md           # You are here
+├── src/                # React (Neo-Glassmorphism UI)
+├── src/components/     # Modular 10x10 Matrix & UI Kits
+├── src/bcf_core.json   # Synchronized IDL
+└── README.md           # Documentation
 ```
 
 ---
 
-## 🛡️ Trust & Security
-- **Immutable Logic**: No admin can change raffle rules once activated.
-- **Proof of Funds**: All prizes are escrowed before the first ticket is sold.
-- **Transparent Randomness**: Verification possible on-chain via Switchboard.
+## 🛡️ Security & Transparency
+- **Immutable State**: Once a raffle is active, prize amounts and ticket prices are locked.
+- **Escrow-as-a-Service**: Every round is siloed in its own PDA (Program Derived Address).
+- **Public Audit Trail**: All funding and winner reveals are verifiable on the Solana Explorer.
 
 ---
 
 ## 🎬 Demo & Contact
-- **Website**: [Site URL Placeholder]
-- **GitHub**: [Repo URL Placeholder]
+- **Website**: [Demo URL Placeholder]
+- **Bags Profile**: [Bags Link Placeholder]
 - **X (Twitter)**: [@BagsHackathon](https://x.com/BagsHackathon)
-- **Demo Video**: [Coming Soon ...]
 
 ---
-*Built with ❤️ for the Bags Hackathon 2026. Powered by Solana.*
+*Built for the Bags Hackathon. Empowering creators through on-chain game theory.*

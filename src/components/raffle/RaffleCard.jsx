@@ -3,6 +3,29 @@ import { motion } from 'framer-motion';
 import { Coins, Users, Clock, ChevronRight } from 'lucide-react';
 
 const RaffleCard = ({ raffle, onClick }) => {
+  const [timeLeft, setTimeLeft] = React.useState("");
+
+  React.useEffect(() => {
+    const updateTimer = () => {
+      const now = Date.now();
+      const diff = raffle.endTime - now;
+
+      if (diff <= 0) {
+        setTimeLeft("Ended");
+        return;
+      }
+
+      const h = Math.floor(diff / 3600000);
+      const m = Math.floor((diff % 3600000) / 60000);
+      const s = Math.floor((diff % 60000) / 1000);
+
+      setTimeLeft(`${h}h ${m}m ${s}s`);
+    };
+
+    const interval = setInterval(updateTimer, 1000);
+    updateTimer();
+    return () => clearInterval(interval);
+  }, [raffle.endTime]);
   return (
     <motion.div 
       whileHover={{ y: -8 }}
@@ -50,7 +73,7 @@ const RaffleCard = ({ raffle, onClick }) => {
 
       <div className="flex items-center justify-between text-gray-500 group-hover:text-brand-primary transition-colors pt-4">
         <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest">
-          <Clock className="w-3 h-3" /> 42m Remaining
+          <Clock className="w-3 h-3" /> {timeLeft} Remaining
         </div>
         <div className="w-10 h-10 rounded-full border border-white/10 flex items-center justify-center group-hover:border-brand-primary/30 group-hover:bg-brand-primary/10 shadow-lg">
           <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />

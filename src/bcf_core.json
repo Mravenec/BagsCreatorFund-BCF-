@@ -93,6 +93,7 @@
           { "name": "creator", "type": "publicKey" },
           { "name": "prizeAmount", "type": "u64" },
           { "name": "ticketPrice", "type": "u64" },
+          { "name": "duration", "type": "i64" },
           { "name": "startTime", "type": "i64" },
           { "name": "endTime", "type": "i64" },
           { "name": "expiryTime", "type": "i64" },

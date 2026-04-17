@@ -160,15 +160,26 @@ const MainApp = () => {
     return () => clearInterval(interval);
   }, [fetchRaffles]);
 
+  const [vaultBalance, setVaultBalance] = useState(0);
+
   // Watch for vault deposits
   useEffect(() => {
     if (!newRaffleInfo.vaultAccount) return;
 
+    // Initial check
+    connection.getTokenAccountBalance(newRaffleInfo.vaultAccount).then(bal => {
+      setVaultBalance(Number(bal.value.amount) / 1000000);
+    }).catch(() => setVaultBalance(0));
+
     const subscriptionId = connection.onAccountChange(
       newRaffleInfo.vaultAccount,
       async (accountInfo) => {
-        const amount = accountInfo.data.readBigUInt64LE(64); // Simplified check for token amount
-        if (Number(amount) / 1000000 >= newRaffleInfo.prizeAmount) {
+        // Simple token amount decoding (layout: 32 mint, 32 owner, 8 amount, ...)
+        const amount = accountInfo.data.readBigUInt64LE(64); 
+        const amountNum = Number(amount) / 1000000;
+        setVaultBalance(amountNum);
+
+        if (amountNum >= newRaffleInfo.prizeAmount) {
           console.log("Deposit Detected! Activating...");
           await activateRaffle(newRaffleInfo.rafflePda);
         }
@@ -655,20 +666,35 @@ const MainApp = () => {
                           </div>
                        </div>
                        <div className="space-y-4">
-                          <label className="text-[12px] font-black uppercase tracking-[0.4em] text-gray-500 italic ml-6">Cost Per Slot</label>
+                          <label className="text-[12px] font-black uppercase tracking-[0.4em] text-gray-500 italic ml-6">Cost Per Slot ($USDC)</label>
                           <input 
                               type="number" 
                               value={newRaffleInfo.ticketPrice}
                               onChange={(e) => setNewRaffleInfo({...newRaffleInfo, ticketPrice: e.target.value})}
-                              className="w-full glass !bg-white/5 rounded-[2.5rem] p-8 text-2xl font-display font-black italic outline-none focus:border-brand-primary transition-all group-hover:bg-white/10"
+                              className="w-full glass !bg-white/5 rounded-[2.5rem] p-8 text-2xl font-display font-black italic outline-none focus:border-brand-primary transition-all"
+                           />
+                       </div>
+                       <div className="space-y-4">
+                          <label className="text-[12px] font-black uppercase tracking-[0.4em] text-gray-500 italic ml-6">Duración (Horas)</label>
+                          <input 
+                              type="number" 
+                              value={newRaffleInfo.durationHours}
+                              onChange={(e) => setNewRaffleInfo({...newRaffleInfo, durationHours: e.target.value})}
+                              className="w-full glass !bg-white/5 rounded-[2.5rem] p-8 text-2xl font-display font-black italic outline-none focus:border-brand-primary transition-all"
                            />
                        </div>
                     </div>
                     <div className="space-y-12">
                        <div className="space-y-4">
-                          <label className="text-[12px] font-black uppercase tracking-[0.4em] text-gray-500 italic ml-6">Pitch Description</label>
+                          <label className="text-[12px] font-black uppercase tracking-[0.4em] text-gray-500 italic ml-6">Proyecto & Dirección de Donación (Opcional)</label>
+                          <input 
+                              placeholder="Address de donación (pública para el ganador)"
+                              value={newRaffleInfo.donationAddr}
+                              onChange={(e) => setNewRaffleInfo({...newRaffleInfo, donationAddr: e.target.value})}
+                              className="w-full glass !bg-white/5 rounded-[2rem] p-6 text-[10px] font-main italic outline-none focus:border-brand-primary mb-4"
+                          />
                           <textarea 
-                             placeholder="Capture the community vision..."
+                             placeholder="¿Para qué es este fondo? Atrae a tu comunidad..."
                              value={newRaffleInfo.description}
                              onChange={(e) => setNewRaffleInfo({...newRaffleInfo, description: e.target.value})}
                              className="w-full glass !bg-white/5 rounded-[2.5rem] p-10 text-lg font-main italic h-48 outline-none focus:border-brand-primary transition-all group-hover:bg-white/10 resize-none"
@@ -695,7 +721,16 @@ const MainApp = () => {
                            </div>
                            <div className="text-right">
                               <p className="text-8xl font-display font-black text-white italic tracking-tighter leading-none">{newRaffleInfo.prizeAmount} <span className="text-2xl opacity-40">USDC</span></p>
+                              <div className="mt-4 flex items-center justify-end gap-2 text-brand-secondary italic">
+                                 <Plus className="w-4 h-4" />
+                                 <span className="text-[10px] font-black uppercase tracking-widest">~0.002 SOL (Network Fees)</span>
+                              </div>
                            </div>
+                        </div>
+                        <div className="p-8 glass bg-brand-primary/10 border border-brand-primary/20 rounded-3xl text-center">
+                           <p className="text-[14px] font-black uppercase tracking-[0.2em] italic text-brand-primary">
+                              {vaultBalance >= newRaffleInfo.prizeAmount ? 'DEPOSIT VERIFIED' : `FALTAN: ${(newRaffleInfo.prizeAmount - vaultBalance).toFixed(2)} USDC`}
+                           </p>
                         </div>
                         <div className="p-10 glass !bg-black/50 border-white/10 rounded-[2.5rem]">
                            <div className="text-[11px] font-black uppercase tracking-[0.4em] text-gray-600 mb-6 text-center">TARGET VAULT PDA ADDRESS</div>

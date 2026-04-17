@@ -22,9 +22,10 @@ pub mod bcf_core {
         raffle.creator = ctx.accounts.creator.key();
         raffle.prize_amount = prize_amount;
         raffle.ticket_price = ticket_price;
-        raffle.start_time = 0; // Set upon activation
-        raffle.end_time = 0;   // Set upon activation
-        raffle.expiry_time = clock.unix_timestamp + (15 * 60); // 15-minute funding window
+        raffle.duration = duration;
+        raffle.start_time = 0; 
+        raffle.end_time = 0;   
+        raffle.expiry_time = clock.unix_timestamp + (24 * 3600); // 24-hour funding window by default
         raffle.created_at = clock.unix_timestamp;
         raffle.status = RaffleStatus::WaitingDeposit;
         raffle.description = description.clone();
@@ -55,23 +56,21 @@ pub mod bcf_core {
             return err!(BCFError::RaffleNotWaitingDeposit);
         }
 
+        // TRUSTLESS ACTIVATION: Contract verifies balance
         if ctx.accounts.vault_account.amount < raffle.prize_amount {
             return err!(BCFError::InsufficientPrizeDeposit);
         }
 
         raffle.status = RaffleStatus::Active;
-        // Setting times based on requested duration
-        // We need to store the duration during initialization or pass it here.
-        // For now, let's assume it was for 1 hour as per request example if not specified.
         raffle.start_time = clock.unix_timestamp;
-        raffle.end_time = clock.unix_timestamp + 3600; // Default 1 hour for now, should be dynamic
+        raffle.end_time = clock.unix_timestamp + raffle.duration;
 
         emit!(RaffleActivated {
             raffle: raffle.key(),
             vault: ctx.accounts.vault_account.key(),
         });
 
-        msg!("BCF: Raffle is now ACTIVE.");
+        msg!("BCF: Raffle is now ACTIVE. End time: {}", raffle.end_time);
         Ok(())
     }
 
@@ -153,7 +152,7 @@ pub mod bcf_core {
         let signer = &[&seeds[..]];
 
         match winner_pubkey {
-            Some(winner) => {
+            Some(_winner) => {
                 // Anyone can trigger payout (automation), but logic ensures correct recipients
                 
                 // Transfer Prize to winner
@@ -164,22 +163,22 @@ pub mod bcf_core {
                 };
                 token::transfer(CpiContext::new_with_signer(ctx.accounts.token_program.to_account_info(), prize_transfer, signer), raffle.prize_amount)?;
 
-                // Transfer Sales to creator
+                // Transfer Sales (Revenue) to creator
                 let sales_transfer = Transfer {
                     from: ctx.accounts.vault_account.to_account_info(),
                     to: ctx.accounts.creator_token_account.to_account_info(),
                     authority: raffle.to_account_info(),
                 };
-                token::transfer(CpiContext::new_with_signer(ctx.accounts.token_program.to_account_info(), sales_transfer, raffle.collected_funds)?;
+                token::transfer(CpiContext::new_with_signer(ctx.accounts.token_program.to_account_info(), sales_transfer, signer), raffle.collected_funds)?;
             },
             None => {
-                // If nobody won, creator gets everything back
-                let total_transfer = Transfer {
+                // CASE: NO WINNER -> Creator takes EVERYTHING (Prize + All Ticket Revenue)
+                let refund_transfer = Transfer {
                     from: ctx.accounts.vault_account.to_account_info(),
                     to: ctx.accounts.creator_token_account.to_account_info(),
                     authority: raffle.to_account_info(),
                 };
-                token::transfer(CpiContext::new_with_signer(ctx.accounts.token_program.to_account_info(), total_transfer, signer), ctx.accounts.vault_account.amount)?;
+                token::transfer(CpiContext::new_with_signer(ctx.accounts.token_program.to_account_info(), refund_transfer, signer), ctx.accounts.vault_account.amount)?;
             }
         }
         
@@ -343,6 +342,7 @@ pub struct Raffle {
     pub creator: Pubkey,
     pub prize_amount: u64,
     pub ticket_price: u64,
+    pub duration: i64,
     pub start_time: i64,
     pub end_time: i64,
     pub expiry_time: i64,
@@ -359,7 +359,7 @@ pub struct Raffle {
 }
 
 impl Raffle {
-    pub const MAX_SIZE: usize = 32 + 8 + 8 + 8 + 8 + 8 + 1 + 100 + 33 + 8 + 8 + 2 + 1 + 1 + (100 * 33);
+    pub const MAX_SIZE: usize = 32 + 8 + 8 + 8 + 8 + 8 + 8 + 8 + 1 + 100 + 33 + 8 + 8 + 2 + 1 + 1 + (100 * 33);
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq)]
