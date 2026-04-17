@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
   Connection, 
   PublicKey, 
@@ -53,10 +53,12 @@ import {
   CreditCard,
   Target,
   Globe,
-  Link
+  Link,
+  Loader2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import * as anchor from "@coral-xyz/anchor";
+import { getAssociatedTokenAddress, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 
 // IDL Import
 import idl from './bcf_core.json';
@@ -70,59 +72,45 @@ import '@solana/wallet-adapter-react-ui/styles.css';
 
 // Program Constants
 const PROGRAM_ID = new PublicKey('BCF1111111111111111111111111111111111111111');
-
-const PLATFORMS = [
-  { id: 'binance', name: 'Binance', fee: 0.30, icon: Building },
-  { id: 'coinbase', name: 'Coinbase', fee: 0.00, icon: Building },
-  { id: 'phantom', name: 'Phantom / Wallet', fee: 0.000005, icon: Wallet },
-];
+// Generic USDC/BAGS Mint for Demo
+const MINT_ADDRESS = new PublicKey('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'); 
 
 const MainApp = () => {
   const { connection } = useConnection();
-  const { publicKey, connected } = useWallet();
+  const { publicKey, connected, sendTransaction } = useWallet();
   const [raffles, setRaffles] = useState([]);
   const [selectedRaffle, setSelectedRaffle] = useState(null);
   const [selectedNumber, setSelectedNumber] = useState(null);
   const [showCexBridge, setShowCexBridge] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [selectedPlatform, setSelectedPlatform] = useState(PLATFORMS[0]);
   const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState(false);
 
-  // Form State
-  const [prizeAmount, setPrizeAmount] = useState(100);
-  const [ticketPrice, setTicketPrice] = useState(5);
-  const [duration, setDuration] = useState(3600);
-  const [description, setDescription] = useState("");
-  const [donationAddr, setDonationAddr] = useState("");
+  // Creation Wizard State
+  const [createStep, setCreateStep] = useState(1); // 1: Info, 2: Instructions, 3: Success
+  const [newRaffleInfo, setNewRaffleInfo] = useState({
+    prizeAmount: 100,
+    ticketPrice: 5,
+    description: "",
+    donationAddr: "",
+    vaultAccount: null,
+    rafflePda: null
+  });
 
   const program = useMemo(() => {
     try {
       if (!idl || !PROGRAM_ID) return null;
-      return new anchor.Program(idl, PROGRAM_ID, { connection });
+      const provider = new anchor.AnchorProvider(connection, { publicKey }, { preflightCommitment: 'processed' });
+      return new anchor.Program(idl, PROGRAM_ID, provider);
     } catch (err) {
       console.error("Critical: Failed to initialize Anchor Program", err);
       return null;
     }
-  }, [connection]);
+  }, [connection, publicKey]);
 
-  useEffect(() => {
-    if (program) {
-      fetchRaffles();
-      const interval = setInterval(fetchRaffles, 10000); // 10s for stability
-      return () => clearInterval(interval);
-    } else {
-      setLoading(false); // Stop loading if program is broken
-    }
-  }, [program]);
-
-  const fetchRaffles = async () => {
+  const fetchRaffles = useCallback(async () => {
     try {
-      if (!program || !program.account || !program.account.raffle) {
-        console.warn("Program not ready for fetching");
-        return;
-      }
-      
-      // REAL On-Chain Fetching
+      if (!program) return;
       const accounts = await program.account.raffle.all();
       
       const decodedRaffles = accounts.map((acc) => {
@@ -147,103 +135,227 @@ const MainApp = () => {
           ticketPrice: data.ticketPrice ? data.ticketPrice.toNumber() / 1000000 : 0,
           ticketsSold: ticketsSold,
           totalTickets: 100,
-          endTime: data.endTime ? data.endTime.toNumber() * 1000 : Date.now(),
+          endTime: data.endTime ? data.endTime.toNumber() * 1000 : Date.now() + 3600000,
           status: statusStr,
-          creator: data.creator ? data.creator.toString().slice(0, 4) + '...' + data.creator.toString().slice(-4) : "---",
-          winner: data.winningNumber !== null && data.winningNumber !== undefined ? data.winningNumber : null,
+          creator: data.creator.toString(),
+          winner: data.winningNumber,
           donationAddress: data.donationAddress ? data.donationAddress.toString() : null,
-          rawSlots: data.slots || []
+          rawSlots: data.slots || [],
+          vaultBump: data.vaultBump
         };
       });
 
       setRaffles(decodedRaffles);
       setLoading(false);
     } catch (err) {
-      console.error("Real fetch error:", err);
+      console.error("Fetch error:", err);
       setLoading(false);
+    }
+  }, [program]);
+
+  useEffect(() => {
+    fetchRaffles();
+    const interval = setInterval(fetchRaffles, 15000);
+    return () => clearInterval(interval);
+  }, [fetchRaffles]);
+
+  // Watch for vault deposits
+  useEffect(() => {
+    if (!newRaffleInfo.vaultAccount) return;
+
+    const subscriptionId = connection.onAccountChange(
+      newRaffleInfo.vaultAccount,
+      async (accountInfo) => {
+        const amount = accountInfo.data.readBigUInt64LE(64); // Simplified check for token amount
+        if (Number(amount) / 1000000 >= newRaffleInfo.prizeAmount) {
+          console.log("Deposit Detected! Activating...");
+          await activateRaffle(newRaffleInfo.rafflePda);
+        }
+      },
+      'confirmed'
+    );
+
+    return () => connection.removeAccountChangeListener(subscriptionId);
+  }, [newRaffleInfo.vaultAccount, connection]);
+
+  const initializeRaffle = async () => {
+    if (!connected) return alert("Connect Wallet First");
+    setActionLoading(true);
+    try {
+      const [rafflePda] = PublicKey.findProgramAddressSync(
+        [Buffer.from("raffle"), publicKey.toBuffer(), Buffer.from(newRaffleInfo.description)],
+        PROGRAM_ID
+      );
+
+      const [vaultPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from("vault"), rafflePda.toBuffer()],
+        PROGRAM_ID
+      );
+
+      const tx = await program.methods
+        .initializeRaffle(
+          new anchor.BN(newRaffleInfo.prizeAmount * 1000000),
+          new anchor.BN(newRaffleInfo.ticketPrice * 1000000),
+          new anchor.BN(3600), // 1 hour
+          newRaffleInfo.description,
+          newRaffleInfo.donationAddr ? new PublicKey(newRaffleInfo.donationAddr) : null
+        )
+        .accounts({
+          raffle: rafflePda,
+          vaultAccount: vaultPda,
+          mint: MINT_ADDRESS,
+          creator: publicKey,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+          rent: SYSVAR_RENT_PUBKEY,
+        })
+        .rpc();
+
+      setNewRaffleInfo(prev => ({ ...prev, vaultAccount: vaultPda, rafflePda }));
+      setCreateStep(2); // Show deposit instructions
+      fetchRaffles();
+    } catch (err) {
+      console.error("Init Error:", err);
+      alert("Failed to initialize: " + err.message);
+    } finally {
+      setActionLoading(false);
     }
   };
 
-  const activeRaffles = raffles.filter(r => r.status !== 'resolved' && r.status !== 'cancelled' && r.status !== 'closed');
-  const completedRaffles = raffles.filter(r => r.status === 'resolved');
+  const activateRaffle = async (rafflePda) => {
+    try {
+      await program.methods
+        .activateRaffle()
+        .accounts({
+          raffle: rafflePda,
+          vaultAccount: newRaffleInfo.vaultAccount,
+        })
+        .rpc();
+      
+      setCreateStep(3); // Success
+      fetchRaffles();
+    } catch (err) {
+      console.error("Activation Error:", err);
+    }
+  };
+
+  const buyTicket = async (number) => {
+    if (!connected) return alert("Connect Wallet First");
+    setActionLoading(true);
+    try {
+      const rafflePda = new PublicKey(selectedRaffle.pubkey);
+      const [vaultPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from("vault"), rafflePda.toBuffer()],
+        PROGRAM_ID
+      );
+
+      const buyerAta = await getAssociatedTokenAddress(MINT_ADDRESS, publicKey);
+
+      await program.methods
+        .buyTicket(number)
+        .accounts({
+          raffle: rafflePda,
+          buyer: publicKey,
+          buyerTokenAccount: buyerAta,
+          vaultAccount: vaultPda,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        })
+        .rpc();
+
+      alert("Ticket Purchased Successfully!");
+      fetchRaffles();
+      setSelectedNumber(null);
+    } catch (err) {
+      console.error("Buy Error:", err);
+      alert("Purchase failed: " + err.message);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const activeRaffles = raffles.filter(r => r.status === 'active' || r.status === 'waitingDeposit');
+  const completedRaffles = raffles.filter(r => r.status === 'resolved' || r.status === 'closed');
 
   return (
-    <div className="min-h-screen relative font-main selection:bg-brand-primary/30">
-      {/* Neo-Glass Background Layers */}
-      <div className="fixed inset-0 pointer-events-none -z-10">
-        <div className="absolute top-[10%] left-[10%] w-[600px] h-[600px] bg-brand-primary/10 rounded-full blur-[150px] animate-pulse" />
-        <div className="absolute bottom-[20%] right-[10%] w-[500px] h-[500px] bg-brand-secondary/5 rounded-full blur-[150px]" />
+    <div className="min-h-screen relative font-main selection:bg-brand-primary/30 text-white overflow-x-hidden">
+      {/* Dynamic Background */}
+      <div className="fixed inset-0 pointer-events-none -z-10 bg-[#09090b]">
+        <motion.div 
+          animate={{ 
+            scale: [1, 1.2, 1],
+            opacity: [0.1, 0.15, 0.1] 
+          }}
+          transition={{ duration: 10, repeat: Infinity }}
+          className="absolute top-[10%] left-[10%] w-[800px] h-[800px] bg-brand-primary/20 rounded-full blur-[180px]" 
+        />
+        <div className="absolute bottom-[10%] right-[10%] w-[600px] h-[600px] bg-brand-secondary/10 rounded-full blur-[150px]" />
       </div>
 
-      <nav className="sticky top-0 z-100 glass px-12 py-5 border-none shadow-2xl">
+      <nav className="sticky top-0 z-100 glass px-8 py-6 border-b border-white/5 shadow-2xl backdrop-blur-3xl">
         <div className="max-w-7xl mx-auto flex justify-between items-center">
-          <div className="flex items-center gap-4 cursor-pointer group" onClick={() => setSelectedRaffle(null)}>
-            <div className="w-12 h-12 bg-gradient-to-br from-brand-primary to-purple-600 rounded-2xl flex items-center justify-center shadow-[0_0_30px_rgba(168,85,247,0.4)] group-hover:scale-110 transition-transform">
-               <Gem className="text-white w-7 h-7" />
+          <div className="flex items-center gap-6 cursor-pointer group" onClick={() => setSelectedRaffle(null)}>
+            <div className="w-14 h-14 bg-gradient-to-br from-brand-primary to-purple-600 rounded-3xl flex items-center justify-center shadow-[0_0_40px_rgba(168,85,247,0.4)] group-hover:scale-110 transition-all duration-500">
+               <Gem className="text-white w-8 h-8" />
             </div>
-            <div className="space-y-0.5">
-              <h1 className="text-2xl font-display font-black tracking-tighter italic uppercase text-white">BAGS<span className="text-brand-primary">Fund</span></h1>
+            <div className="space-y-1">
+              <h1 className="text-3xl font-display font-black tracking-tighter italic uppercase">
+                BAGS<span className="text-brand-primary">Fund</span>
+              </h1>
               <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-brand-secondary shadow-[0_0_10px_#10b981]" />
-                <span className="text-[9px] font-black uppercase tracking-[0.3em] text-gray-500 italic">Solana Creator Protocol</span>
+                <div className="w-2 h-2 rounded-full bg-brand-secondary shadow-[0_0_10px_#10b981] animate-pulse" />
+                <span className="text-[10px] font-black uppercase tracking-[0.4em] text-gray-500 italic">Solana Protocol Hub</span>
               </div>
             </div>
           </div>
           
-          <div className="hidden lg:flex items-center gap-12 font-black uppercase text-[10px] tracking-widest text-gray-400">
+          <div className="hidden lg:flex items-center gap-10">
             <button 
               onClick={() => setShowCreateModal(true)}
-              className="group flex items-center gap-3 text-brand-primary hover:text-white transition-all scale-105 active:scale-95"
+              className="group flex items-center gap-4 text-[11px] font-black uppercase tracking-widest text-brand-primary hover:text-white transition-all bg-brand-primary/10 px-6 py-3 rounded-2xl hover:bg-brand-primary/20"
             >
-               <div className="w-8 h-8 rounded-full bg-brand-primary/10 flex items-center justify-center group-hover:bg-brand-primary/20 transition-all">
-                 <Plus className="w-4 h-4" />
-               </div>
-               LAUNCH FUNDRAISER
+               <Plus className="w-4 h-4" /> LAUNCH ROUND
             </button>
-            <div className="flex items-center gap-3 opacity-60">
-               <Globe className="w-3.5 h-3.5 text-brand-secondary" />
-               MAINNET HUB ACTIVE
-            </div>
-            <WalletMultiButton className="!bg-brand-primary !h-14 !rounded-2xl !text-[10px] !font-black !px-10 hover:!brightness-110 !border-none !shadow-xl transition-all" />
+            <WalletMultiButton className="!bg-brand-primary/10 !hover:bg-brand-primary !h-14 !rounded-2xl !text-[11px] !font-black !px-8 transition-all border border-brand-primary/20 hover:border-brand-primary" />
           </div>
         </div>
       </nav>
 
-      <div className="flex flex-col lg:flex-row min-h-screen">
-        <main className="flex-1 p-12 lg:p-24 relative">
+      <div className="flex flex-col lg:flex-row">
+        <main className="flex-1 p-8 lg:p-20">
           <AnimatePresence mode="wait">
             {!selectedRaffle ? (
               <motion.div 
                 key="grid"
-                initial={{ opacity: 0, y: 30 }}
+                initial={{ opacity: 0, y: 40 }}
                 animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -30 }}
-                className="max-w-6xl mx-auto space-y-24"
+                exit={{ opacity: 0, y: -40 }}
+                className="max-w-7xl mx-auto space-y-24"
               >
-                <header className="space-y-8">
-                   <div className="inline-flex items-center gap-3 bg-white/5 border border-white/10 px-6 py-2 rounded-full backdrop-blur-md">
-                      <Target className="w-4 h-4 text-brand-primary animate-pulse" />
-                      <span className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-400 italic">Community Treasury Hub</span>
-                   </div>
-                   <h2 className="text-8xl font-display font-black uppercase tracking-tighter italic leading-[0.85] text-white">
-                     Fund your vision.<br />
-                     <span className="text-brand-primary drop-shadow-[0_0_20px_rgba(168,85,247,0.3)]">Win with your community.</span>
+                <header className="space-y-10">
+                   <motion.div 
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    className="inline-flex items-center gap-4 bg-white/5 border border-white/10 px-8 py-3 rounded-full backdrop-blur-md"
+                   >
+                      <Target className="w-5 h-5 text-brand-primary animate-pulse" />
+                      <span className="text-[11px] font-black uppercase tracking-[0.4em] text-gray-400 italic">Hackathon Bootstrap Arena</span>
+                   </motion.div>
+                   <h2 className="text-9xl font-display font-black uppercase tracking-tighter italic leading-[0.8] drop-shadow-2xl">
+                     Build Your<br />
+                     <span className="text-brand-primary bg-clip-text text-transparent bg-gradient-to-r from-brand-primary to-purple-400">Dream Fund.</span>
                    </h2>
-                   <p className="text-gray-500 text-lg font-main italic max-w-2xl leading-relaxed">
-                     The Bags Creator Fund empowers builders to launch decentralized fundraisers. Fans participate to win big, while creators bootstrap their next world-changing project.
+                   <p className="text-gray-400 text-xl font-main italic max-w-3xl leading-relaxed">
+                     A decentralized funding protocol where creators launch high-stakes bootstrap rounds. Back projects, win prizes, and redefine Solana creator finance.
                    </p>
                 </header>
 
                 {loading ? (
                    <div className="h-96 flex flex-col items-center justify-center space-y-8 glass-card">
-                      <Zap className="w-16 h-16 text-brand-primary animate-pulse" />
-                      <div className="text-center space-y-2">
-                        <p className="text-[11px] font-black uppercase tracking-[0.5em] text-brand-primary italic">Synchronizing Node</p>
-                        <p className="text-[9px] font-black uppercase tracking-widest text-gray-600">Securely loading on-chain data...</p>
-                      </div>
+                      <Loader2 className="w-16 h-16 text-brand-primary animate-spin" />
+                      <p className="text-[12px] font-black uppercase tracking-[0.5em] text-brand-primary italic">Syncing Ledger...</p>
                    </div>
                 ) : (
-                  <div className="grid md:grid-cols-2 gap-12">
+                  <div className="grid md:grid-cols-2 gap-10">
                     {activeRaffles.map((raffle) => (
                       <RaffleCard 
                         key={raffle.id} 
@@ -251,112 +363,110 @@ const MainApp = () => {
                         onClick={() => setSelectedRaffle(raffle)} 
                       />
                     ))}
-                    {activeRaffles.length === 0 && (
-                      <div 
-                        className="col-span-2 glass-card p-24 text-center border-dashed border-white/10 group cursor-pointer"
-                        onClick={() => setShowCreateModal(true)}
-                      >
-                         <div className="opacity-40 group-hover:opacity-100 transition-all space-y-6">
-                            <Plus className="w-16 h-16 mx-auto text-brand-primary group-hover:rotate-90 transition-transform duration-500" />
-                            <p className="text-[11px] font-black uppercase tracking-[0.3em] italic">No active fundraisers found in your programID</p>
-                            <span className="inline-block text-brand-primary text-[10px] font-black tracking-widest border-b border-brand-primary pb-1">Initialize your first campaign</span>
-                         </div>
-                      </div>
-                    )}
+                    <motion.div 
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                      className="glass-card p-20 flex flex-col items-center justify-center border-dashed border-white/10 hover:border-brand-primary/40 group cursor-pointer h-full min-h-[400px]"
+                      onClick={() => setShowCreateModal(true)}
+                    >
+                       <Plus className="w-16 h-16 text-brand-primary group-hover:rotate-90 transition-transform duration-700" />
+                       <p className="text-[12px] font-black uppercase tracking-[0.4em] italic mt-8">Initialize New Round</p>
+                    </motion.div>
                   </div>
                 )}
               </motion.div>
             ) : (
               <motion.div 
                 key="detail"
-                initial={{ opacity: 0, scale: 0.98 }}
+                initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.98 }}
-                className="max-w-6xl mx-auto space-y-20 pb-20"
+                exit={{ opacity: 0, scale: 0.95 }}
+                className="max-w-7xl mx-auto space-y-16 pb-20"
               >
                 <button 
                   onClick={() => setSelectedRaffle(null)}
-                  className="flex items-center gap-3 text-[11px] font-black uppercase tracking-[0.3em] text-gray-500 hover:text-white transition-all group italic"
+                  className="flex items-center gap-4 text-[12px] font-black uppercase tracking-[0.4em] text-gray-500 hover:text-white transition-all group italic"
                 >
-                  <ArrowLeft className="w-5 h-5 group-hover:-translate-x-2 transition-transform" /> BACK TO POOL
+                  <ArrowLeft className="w-6 h-6 group-hover:-translate-x-2 transition-transform" /> BACK TO POOL
                 </button>
 
-                <div className="flex flex-col lg:flex-row justify-between items-start gap-16">
-                  <div className="flex-1 space-y-8">
-                     <div className="flex flex-wrap gap-4">
-                        <span className="glass bg-brand-primary/10 px-5 py-2 rounded-full text-[10px] font-black uppercase tracking-widest text-brand-primary shadow-lg shadow-brand-primary/10 italic">
-                          ID: {selectedRaffle.pubkey.slice(0, 12)}...
+                <div className="flex flex-col lg:flex-row justify-between items-start gap-12">
+                  <div className="flex-1 space-y-10">
+                     <div className="flex gap-4">
+                        <span className="glass bg-brand-primary/10 px-6 py-2 rounded-full text-[11px] font-black uppercase tracking-widest text-brand-primary italic shadow-lg">
+                          PDA: {selectedRaffle.pubkey.slice(0, 8)}...
                         </span>
-                        <span className="glass bg-brand-secondary/10 px-5 py-2 rounded-full text-[10px] font-black uppercase tracking-widest text-brand-secondary italic">
-                          Verified Creator Account
-                        </span>
+                        {selectedRaffle.status === 'waitingDeposit' && (
+                          <span className="glass bg-yellow-500/10 px-6 py-2 rounded-full text-[11px] font-black uppercase tracking-widest text-yellow-500 italic animate-pulse">
+                            Waiting Bootstrap
+                          </span>
+                        )}
                      </div>
-                     <h1 className="text-8xl font-display font-black uppercase italic tracking-tighter leading-[0.85] text-white">
+                     <h1 className="text-8xl font-display font-black uppercase italic tracking-tighter leading-none">
                        {selectedRaffle.description}
                      </h1>
-                     <div className="flex items-center gap-4 opacity-50">
-                        <div className="w-10 h-10 rounded-full glass flex items-center justify-center font-black text-brand-primary italic text-[11px]">BC</div>
-                        <span className="text-[11px] font-black uppercase tracking-[0.2em] italic">Fundraiser Lead: {selectedRaffle.creator}</span>
+                     <div className="flex items-center gap-5 opacity-60 bg-white/5 w-fit px-8 py-4 rounded-3xl border border-white/5">
+                        <div className="w-12 h-12 rounded-2xl glass flex items-center justify-center font-black text-brand-primary italic">BC</div>
+                        <div className="space-y-1">
+                          <p className="text-[12px] font-black uppercase tracking-[0.3em] italic">Project Lead</p>
+                          <p className="text-[10px] text-gray-500">{selectedRaffle.creator}</p>
+                        </div>
                      </div>
                   </div>
 
-                  <div className="glass-card p-12 space-y-4 border-brand-secondary/30 min-w-[320px] shadow-[0_0_50px_rgba(16,185,129,0.15)]">
-                     <div className="text-[11px] font-black uppercase tracking-[0.3em] text-gray-500 italic">Campaign Goal</div>
-                     <div className="text-6xl font-display font-black text-brand-secondary italic tracking-tighter leading-none">
-                        {selectedRaffle.prizePool} <span className="text-2xl text-white/40">$BAGS</span>
+                  <div className="glass-card p-12 space-y-6 border-brand-secondary/30 min-w-[360px] shadow-3xl bg-black/40">
+                     <div className="text-[12px] font-black uppercase tracking-[0.4em] text-gray-500 italic">Prize Pool Goal</div>
+                     <div className="text-7xl font-display font-black text-brand-secondary italic tracking-tighter">
+                        {selectedRaffle.prizePool} <span className="text-3xl text-white/30">$USDC</span>
                      </div>
-                     <div className="pt-6 mt-6 border-t border-white/5 space-y-4">
-                        <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest">
-                           <span className="text-gray-500 italic">Ticket Cost</span>
-                           <span className="text-white text-base">{selectedRaffle.ticketPrice} $BAGS</span>
-                        </div>
+                     <div className="pt-8 mt-4 border-t border-white/10 flex justify-between items-center text-[12px] font-black uppercase tracking-widest">
+                        <span className="text-gray-500 italic">Ticket Fee</span>
+                        <span className="text-2xl text-white">{selectedRaffle.ticketPrice} USDC</span>
                      </div>
                   </div>
                 </div>
 
-                <div className="grid lg:grid-cols-12 gap-20">
-                   <div className="lg:col-span-8 space-y-12">
-                      <div className={`glass-card p-12 relative overflow-hidden transition-all duration-700 ${selectedRaffle.status === 'resolved' ? 'grayscale opacity-70 cursor-not-allowed' : ''}`}>
+                <div className="grid lg:grid-cols-12 gap-16">
+                   <div className="lg:col-span-8">
+                      <div className={`glass-card p-12 relative overflow-hidden transition-all duration-1000 ${selectedRaffle.status === 'waitingDeposit' ? 'grayscale opacity-50' : ''}`}>
                         {selectedRaffle.status === 'resolved' && (
-                          <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/60 backdrop-blur-[2px]">
-                             <div className="glass bg-brand-primary/20 border-brand-primary/40 px-12 py-8 rounded-[3rem] text-center shadow-2xl">
-                                <Trophy className="w-16 h-16 text-brand-primary mx-auto mb-6 drop-shadow-[0_0_20px_#a855f7]" />
-                                <h3 className="text-6xl font-display font-black italic tracking-tighter text-white">WINNER: #{selectedRaffle.winner?.toString().padStart(2, '0')}</h3>
-                                <p className="text-[11px] font-black uppercase tracking-[0.4em] text-brand-primary mt-4">CAMPAIGN RESOLVED ON-CHAIN</p>
+                          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="absolute inset-0 z-10 flex items-center justify-center bg-black/80 backdrop-blur-md">
+                             <div className="glass bg-brand-primary/20 border-brand-primary/40 p-16 rounded-[4rem] text-center shadow-4xl scale-125">
+                                <Trophy className="w-24 h-24 text-brand-primary mx-auto mb-8 drop-shadow-[0_0_30px_#a855f7]" />
+                                <h3 className="text-7xl font-display font-black italic tracking-tighter text-white">#{selectedRaffle.winner?.toString().padStart(2, '0')}</h3>
+                                <p className="text-[14px] font-black uppercase tracking-[0.5em] text-brand-primary mt-6">WINNER IDENTIFIED</p>
                              </div>
-                          </div>
+                          </motion.div>
                         )}
 
                         <header className="flex justify-between items-center mb-16">
-                           <div className="space-y-2">
-                             <h3 className="text-[11px] font-black uppercase tracking-[0.3em] text-gray-500 italic flex items-center gap-3">
-                                <QrCode className="w-5 h-5 text-brand-primary" /> Matrix Slots • Total Neutrality
+                           <div className="space-y-3">
+                             <h3 className="text-[14px] font-black uppercase tracking-[0.4em] text-brand-primary italic flex items-center gap-4">
+                                <QrCode className="w-6 h-6" /> SLOT MATRIX SELECTION
                              </h3>
-                             <p className="text-[10px] text-gray-700 italic font-black uppercase tracking-widest leading-loose">Choose your reservation slot to participate in this bootstrap round.</p>
+                             <p className="text-[11px] text-gray-500 italic font-black uppercase tracking-widest">Each slot is an immutable entry on the Solana ledger.</p>
                            </div>
-                           <div className="flex flex-col items-end">
-                              <div className="flex items-center gap-3 text-brand-secondary text-[11px] font-black uppercase tracking-[0.2em] italic">
-                                 <Clock className="w-4 h-4 animate-pulse" /> Finalización: 42m
+                           <div className="bg-brand-primary/10 px-8 py-4 rounded-[2rem] border border-brand-primary/20">
+                              <div className="flex items-center gap-4 text-brand-primary text-[14px] font-black uppercase tracking-[0.3em] italic">
+                                 <Clock className="w-5 h-5 animate-pulse" /> 58:12
                               </div>
                            </div>
                         </header>
 
-                        <div className="matrix-10x10 shadow-inner p-2 rounded-[2rem] bg-black/20">
+                        <div className="matrix-10x10 bg-black/40 p-10 rounded-[3rem] shadow-inner">
                           {Array.from({ length: 100 }, (_, i) => {
                             const isSold = selectedRaffle.rawSlots[i] !== null;
-                            const isWinning = selectedRaffle.status === 'resolved' && selectedRaffle.winner === i;
+                            const isSelected = selectedNumber === i;
                             return (
                               <button
                                 key={i}
-                                disabled={isSold || selectedRaffle.status === 'resolved'}
+                                disabled={isSold || selectedRaffle.status !== 'active' || actionLoading}
                                 onClick={() => setSelectedNumber(i)}
-                                className={`aspect-square number-grid-item !text-[10px] font-display transition-all duration-300 relative ${
-                                  selectedNumber === i ? 'active scale-110 !z-20 shadow-2xl shadow-brand-primary/40' : ''
-                                } ${isSold ? '!bg-white/5 !text-white/20 !border-white/5 cursor-not-allowed grayscale' : ''} ${
-                                  isWinning ? '!bg-brand-primary !text-white !border-brand-primary animate-bounce scale-110 z-30' : ''
-                                }`}
+                                className={`number-grid-item text-[12px] font-display ${
+                                  isSelected ? 'active scale-125 z-20 shadow-2xl' : ''
+                                } ${isSold ? '!bg-white/5 !text-white/10 !border-none opacity-40 grayscale cursor-not-allowed' : ''}`}
                               >
-                                {isSold ? (isWinning ? '★' : '✕') : i.toString().padStart(2, '0')}
+                                {isSold ? '✕' : i.toString().padStart(2, '0')}
                               </button>
                             );
                           })}
@@ -365,109 +475,70 @@ const MainApp = () => {
                    </div>
 
                    <aside className="lg:col-span-4 space-y-12">
-                     <div className="glass-card p-12 space-y-12 relative overflow-hidden group">
-                        <div className="absolute top-0 right-0 w-32 h-32 bg-brand-primary/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
-                        <div className="space-y-8">
-                           <div className="flex justify-between items-end">
-                              <span className="text-[11px] font-black uppercase tracking-[0.3em] text-gray-500 italic">Round Velocity</span>
-                              <span className="text-4xl font-display font-black text-white italic tracking-tighter">{selectedRaffle.ticketsSold}%</span>
-                           </div>
-                           <div className="progress-container !h-4 p-1">
-                              <motion.div 
-                                initial={{ width: 0 }} 
-                                animate={{ width: `${selectedRaffle.ticketsSold}%` }} 
-                                className="progress-fill !rounded-full shadow-[0_0_15px_rgba(168,85,247,0.5)]" 
-                              />
-                           </div>
-                           <div className="flex justify-between text-[10px] font-black uppercase tracking-[0.2em] italic opacity-40">
-                              <span>Locked: {selectedRaffle.ticketsSold} Slots</span>
-                              <span>Goal: 100 Slots</span>
-                           </div>
-                        </div>
+                      <div className="glass-card p-12 space-y-10 relative overflow-hidden bg-black/30">
+                         <div className="flex justify-between items-end">
+                            <span className="text-[12px] font-black uppercase tracking-[0.4em] text-gray-500 italic">Participation Velocity</span>
+                            <span className="text-5xl font-display font-black italic">{selectedRaffle.ticketsSold}%</span>
+                         </div>
+                         <div className="progress-container !h-5 p-1 border border-white/5">
+                            <motion.div 
+                              initial={{ width: 0 }} 
+                              animate={{ width: `${selectedRaffle.ticketsSold}%` }} 
+                              className="progress-fill shadow-[0_0_20px_rgba(168,85,247,0.5)]" 
+                            />
+                         </div>
+                         <div className="grid grid-cols-2 gap-8 pt-10 border-t border-white/5">
+                            <div>
+                               <p className="text-[10px] font-black uppercase tracking-widest text-gray-600 mb-2">Reserve Pool</p>
+                               <p className="text-xl font-display font-black italic">{selectedRaffle.prizePool} USDC</p>
+                            </div>
+                            <div>
+                               <p className="text-[10px] font-black uppercase tracking-widest text-gray-600 mb-2">Network Status</p>
+                               <p className="text-xl font-display font-black italic text-brand-secondary">VERIFIED</p>
+                            </div>
+                         </div>
+                      </div>
 
-                        <div className="space-y-8 pt-10 border-t border-white/5">
-                           {[
-                             { label: "Royalty Rate", val: "5%", ico: DollarSign },
-                             { label: "Reserve Pool", val: `${selectedRaffle.prizePool} BAGS`, ico: Gem },
-                             { label: "Bootstrap Status", val: selectedRaffle.status.toUpperCase(), ico: Shield }
-                           ].map((s, i) => (
-                             <div key={i} className="flex justify-between items-center group/item hover:translate-x-1 transition-transform">
-                                <div className="flex items-center gap-4">
-                                   <div className="w-9 h-9 glass rounded-xl flex items-center justify-center text-brand-primary/60 group-hover/item:text-brand-primary transition-colors">
-                                      <s.ico className="w-4 h-4" />
-                                   </div>
-                                   <span className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-500 italic">{s.label}</span>
-                                </div>
-                                <span className="text-[12px] font-black text-white italic">{s.val}</span>
-                             </div>
-                           ))}
-                        </div>
-                     </div>
-
-                     <div className="space-y-6">
-                        {selectedNumber !== null && selectedRaffle.status !== 'resolved' ? (
+                      <div className="space-y-6">
+                        {selectedNumber !== null && selectedRaffle.status === 'active' ? (
                           <motion.div 
-                            initial={{ opacity: 0, scale: 0.9 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            className="bg-brand-primary/10 border border-brand-primary/30 rounded-[3rem] p-12 space-y-10 shadow-3xl shadow-brand-primary/10"
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            className="bg-brand-primary/10 border border-brand-primary/40 rounded-[3rem] p-12 space-y-10 shadow-4xl"
                           >
-                             <div className="space-y-3">
-                                <p className="text-[11px] font-black uppercase text-brand-primary tracking-[0.4em] italic leading-loose">Blockchain Reservation</p>
-                                <p className="text-8xl font-display font-black text-white italic tracking-tighter leading-none mb-4">#{selectedNumber.toString().padStart(2, '0')}</p>
+                             <div className="space-y-4">
+                                <p className="text-[12px] font-black uppercase text-brand-primary tracking-[0.5em] italic">LOCKING SLOT</p>
+                                <p className="text-9xl font-display font-black italic tracking-tighter leading-none">#{selectedNumber.toString().padStart(2, '0')}</p>
                              </div>
                              
-                             <div className="space-y-4">
-                                <button className="btn-primary w-full !rounded-[2rem] !py-8 !text-[12px] !font-black !uppercase !tracking-[0.3em] !shadow-2xl shadow-brand-primary/20 hover:scale-[1.02] active:scale-95 transition-all">
-                                  CONFIRM WITH WEB3 WALLET
+                             <div className="space-y-6">
+                                <button 
+                                  onClick={() => buyTicket(selectedNumber)}
+                                  disabled={actionLoading}
+                                  className="btn-primary w-full !py-10 !rounded-3xl hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-4"
+                                >
+                                  {actionLoading ? <Loader2 className="animate-spin" /> : 'SECURE WITH WALLET'}
                                 </button>
                                 <button 
                                    onClick={() => setShowCexBridge(true)}
-                                   className="w-full glass !bg-white/5 border-white/5 hover:border-white/10 rounded-[2rem] py-8 text-[11px] font-black uppercase tracking-[0.2em] text-gray-400 italic hover:text-white transition-all"
+                                   className="w-full glass !bg-white/5 hover:bg-white/10 rounded-3xl py-8 text-[12px] font-black uppercase tracking-widest text-gray-400 italic hover:text-white transition-all"
                                 >
-                                   PURCHASE FROM BINANCE / COINBASE
+                                   BINANCE / COINBASE BRIDGE
                                 </button>
-                             </div>
-                             
-                             <div className="flex items-start gap-4 p-6 glass bg-black/20 border-none rounded-3xl">
-                                <Shield className="w-5 h-5 text-brand-primary shrink-0" />
-                                <p className="text-[10px] text-gray-500 font-main italic leading-relaxed">
-                                   Full audit trail: once confirmed, your address is hard-locked to this slot on the Solana ledger.
-                                </p>
                              </div>
                           </motion.div>
                         ) : (
-                          <div className={`glass-card p-12 flex flex-col items-center justify-center text-center space-y-8 min-h-[400px] ${selectedRaffle.status === 'resolved' ? 'opacity-30' : ''}`}>
-                            <div className="relative">
-                               <Plus className={`w-20 h-20 text-brand-primary/20 ${selectedRaffle.status !== 'resolved' ? 'animate-spin-slow' : ''}`} />
-                               {selectedRaffle.status !== 'resolved' && <Zap className="w-8 h-8 text-brand-primary absolute inset-0 m-auto animate-pulse" />}
-                            </div>
-                            <div className="space-y-4">
-                               <p className="text-[12px] font-black uppercase tracking-[0.5em] text-gray-400 italic leading-loose">
-                                  {selectedRaffle.status === 'resolved' ? 'CAMPAIGN FINALIZED' : 'SELECT YOUR SEED SLOT'}
-                               </p>
-                               <p className="text-[10px] text-gray-700 italic font-black uppercase tracking-[0.3em] max-w-[200px] leading-relaxed mx-auto">
-                                  {selectedRaffle.status === 'resolved' ? 'Wait for the next fundraiser round' : 'Pick a number from the pool above to initiate funding'}
-                               </p>
-                            </div>
+                          <div className="glass-card p-12 flex flex-col items-center justify-center text-center space-y-10 min-h-[400px] border border-white/5">
+                             <div className="relative">
+                               <Plus className={`w-28 h-28 text-brand-primary/10 ${selectedRaffle.status === 'active' ? 'animate-spin-slow' : ''}`} />
+                               {selectedRaffle.status === 'active' && <Zap className="w-12 h-12 text-brand-primary absolute inset-0 m-auto animate-pulse shadow-[0_0_40px_rgba(168,85,247,0.5)]" />}
+                             </div>
+                             <p className="text-[14px] font-black uppercase tracking-[0.6em] text-gray-600 italic">
+                                {selectedRaffle.status === 'waitingDeposit' ? 'ROUND INITIALIZING' : 'SELECT TARGET SLOT'}
+                             </p>
                           </div>
                         )}
-                        
-                        {selectedRaffle.donationAddress && (
-                           <motion.div 
-                              initial={{ opacity: 0 }} 
-                              animate={{ opacity: 1 }} 
-                              className="glass-card p-10 !bg-brand-secondary/5 border-brand-secondary/20 flex items-center gap-6 group hover:translate-y-[-4px] transition-all cursor-pointer"
-                           >
-                              <div className="w-14 h-14 bg-brand-secondary/10 rounded-2xl flex items-center justify-center shrink-0 shadow-lg shadow-brand-secondary/5">
-                                <Heart className="text-brand-secondary w-7 h-7" />
-                              </div>
-                              <div className="space-y-2">
-                                <h4 className="text-[11px] font-black uppercase tracking-[0.2em] italic text-brand-secondary group-hover:text-white transition-colors">Support this Creator</h4>
-                                <p className="text-[9px] text-gray-500 italic max-w-xs leading-relaxed">Direct donation address enabled for this round: {selectedRaffle.donationAddress.slice(0,18)}...</p>
-                              </div>
-                           </motion.div>
-                        )}
-                     </div>
+                      </div>
                    </aside>
                 </div>
               </motion.div>
@@ -475,224 +546,186 @@ const MainApp = () => {
           </AnimatePresence>
         </main>
 
-        <aside className="lg:w-1/4 min-w-[380px]">
+        <aside className="lg:w-1/4 min-w-[420px] bg-black/40 backdrop-blur-3xl border-l border-white/5">
            <ResultsSidebar completedRaffles={completedRaffles} />
         </aside>
       </div>
 
-      <footer className="glass border-t border-white/5 px-12 py-12">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-8">
-           <div className="space-y-4">
-              <div className="text-[11px] font-black uppercase tracking-[0.5em] text-gray-600 italic">BAGSFund V1.0 - HACKATHON EDITION</div>
-              <div className="flex gap-8 text-[9px] font-black uppercase tracking-widest text-gray-500">
-                 <a href="#" className="hover:text-brand-primary transition-colors flex items-center gap-2 italic"><Globe className="w-3 h-3" /> DOCS.BAGS.FM</a>
-                 <a href="#" className="hover:text-brand-primary transition-colors flex items-center gap-2 italic"><CreditCard className="w-3 h-3" /> SECURITY AUDITS</a>
-                 <a href="#" className="hover:text-brand-primary transition-colors flex items-center gap-2 italic"><Link className="w-3 h-3" /> EXPLORER</a>
-              </div>
-           </div>
-           <div className="flex items-center gap-6">
-              <div className="text-right">
-                <p className="text-[9px] font-black uppercase tracking-[0.2em] text-brand-primary italic">Decentralized Protocol</p>
-                <p className="text-[11px] font-black text-white italic uppercase tracking-[0.3em]">Built for the Bags Hackathon</p>
-              </div>
-              <div className="w-px h-12 bg-white/10" />
-              <div className="w-12 h-12 bg-white/5 rounded-2xl flex items-center justify-center shadow-inner">
-                 <Zap className="text-brand-primary w-6 h-6 animate-pulse" />
-              </div>
-           </div>
-        </div>
-      </footer>
-
-      {/* MODALS */}
+      {/* CEX BRIDGE MODAL */}
       <AnimatePresence>
         {showCexBridge && (
-          <div className="fixed inset-0 z-300 flex items-center justify-center p-8 bg-black/90 backdrop-blur-xl">
+          <div className="fixed inset-0 z-200 flex items-center justify-center p-8 bg-black/95 backdrop-blur-2xl">
              <motion.div 
-               initial={{ opacity: 0, y: 100, scale: 0.9 }}
-               animate={{ opacity: 1, y: 0, scale: 1 }}
-               exit={{ opacity: 0, y: 100, scale: 0.9 }}
-               className="glass-card !bg-bg-surface p-16 max-w-4xl w-full space-y-16 relative shadow-[0_0_100px_rgba(0,0,0,0.8)] border-white/5"
+               initial={{ opacity: 0, scale: 0.9 }}
+               animate={{ opacity: 1, scale: 1 }}
+               exit={{ opacity: 0, scale: 0.9 }}
+               className="glass-card !bg-bg-dark p-16 max-w-5xl w-full space-y-16 shadow-[0_0_150px_rgba(0,0,0,1)] border-brand-primary/20"
              >
                 <header className="flex justify-between items-start">
-                   <div className="space-y-6">
-                     <div className="inline-flex items-center gap-3 glass bg-brand-primary/10 px-6 py-2 rounded-full overflow-hidden">
-                        <div className="text-brand-primary text-[11px] font-black uppercase tracking-widest italic animate-bounce">Live Bridge Active</div>
-                     </div>
-                     <h2 className="text-7xl font-display font-black uppercase tracking-tighter italic leading-none text-white">BINANCE / COINBASE<br /><span className="text-brand-primary">SECURE BRIDGE</span></h2>
-                     <p className="text-gray-500 text-base font-main italic leading-relaxed max-w-2xl">
-                        Follow these critical instructions to reserve slot <span className="text-brand-primary">#{selectedNumber?.toString().padStart(2, '0')}</span> using your exchange account. Precision is mandatory.
-                     </p>
+                   <div className="space-y-4">
+                     <span className="text-brand-primary text-[14px] font-black uppercase tracking-[0.5em] italic">DIRECT EXCHANGE SETTLEMENT</span>
+                     <h2 className="text-8xl font-display font-black uppercase italic tracking-tighter leading-none">CEX <span className="text-brand-primary text-6xl opacity-50">BRIDGE</span></h2>
                    </div>
-                   <button onClick={() => setShowCexBridge(false)} className="w-16 h-16 glass hover:bg-white/10 rounded-[2rem] flex items-center justify-center group transition-all">
-                      <X className="w-8 h-8 text-gray-500 group-hover:text-white transition-colors" />
-                   </button>
+                   <button onClick={() => setShowCexBridge(false)} className="w-16 h-16 glass rounded-full flex items-center justify-center hover:bg-white/10 transition-all"><X className="w-8 h-8" /></button>
                 </header>
 
-                <div className="grid md:grid-cols-2 gap-16">
-                   <div className="space-y-10">
-                      <div className="space-y-6">
-                        <p className="text-[11px] font-black uppercase tracking-[0.4em] text-gray-400 italic">Step 1: Withdrawal Setup</p>
-                        <div className="glass p-10 rounded-[2.5rem] bg-black/30 border-white/5 space-y-10">
-                           <div className="flex justify-between items-center group">
-                              <span className="text-[11px] font-black uppercase text-gray-500 italic">Reserved Token</span>
-                              <div className="flex items-center gap-3">
-                                 <div className="w-8 h-8 rounded-full bg-brand-primary flex items-center justify-center shadow-lg"><Gem className="w-4 h-4 text-white" /></div>
-                                 <span className="text-xl font-display font-black text-white italic tracking-tighter">$BAGS (Solana)</span>
-                              </div>
-                           </div>
-                           <div className="flex justify-between items-center">
-                              <span className="text-[11px] font-black uppercase text-gray-500 italic">Exact Recipient Amount</span>
-                              <span className="text-4xl font-display font-black text-brand-secondary italic">{(selectedRaffle?.ticketPrice || 0).toFixed(2)} $BAGS</span>
-                           </div>
-                           <div className="p-8 bg-red-500/10 border border-red-500/20 rounded-3xl flex gap-6">
-                              <AlertCircle className="w-10 h-10 text-red-500 shrink-0 mt-1" />
-                              <p className="text-[11px] text-red-400 font-main italic leading-relaxed">
-                                 IMPORTANT: Most exchanges deduct fees from the withdrawal. You MUST ensure the amount <span className="text-white">RECEIVED</span> is exactly {(selectedRaffle?.ticketPrice || 0).toFixed(2)}.
-                              </p>
-                           </div>
-                        </div>
+                <div className="grid md:grid-cols-2 gap-20">
+                   <div className="space-y-12">
+                      <div className="p-12 glass bg-black/50 rounded-[3rem] space-y-8 border-brand-secondary/20">
+                         <div className="flex justify-between items-center">
+                            <span className="text-[12px] font-black uppercase tracking-widest text-gray-500 italic">Token to Send</span>
+                            <div className="flex items-center gap-4 text-2xl font-display font-black italic">USDC <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-[10px] text-white">S</div></div>
+                         </div>
+                         <div className="flex justify-between items-center">
+                            <span className="text-[12px] font-black uppercase tracking-widest text-gray-500 italic">Exact Amount</span>
+                            <span className="text-5xl font-display font-black text-brand-secondary italic">{(selectedRaffle?.ticketPrice || 0).toFixed(2)}</span>
+                         </div>
+                         <div className="bg-red-500/10 p-8 rounded-3xl border border-red-500/20 flex gap-6">
+                            <AlertCircle className="w-10 h-10 text-red-500 shrink-0" />
+                            <p className="text-[11px] text-red-300 font-main italic leading-relaxed uppercase tracking-widest">Withdrawal fees must be added on top. System verifies exact arrival amount.</p>
+                         </div>
                       </div>
                    </div>
 
                    <div className="space-y-10">
                       <div className="space-y-6">
-                         <p className="text-[11px] font-black uppercase tracking-[0.4em] text-gray-400 italic">Step 2: Destination Address</p>
-                         <div className="glass-card !bg-white/5 p-10 space-y-10 border-brand-primary/20">
-                            <div className="space-y-6 text-center">
-                               <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-500 italic mb-4">Contract Direct Deposit Hash</p>
-                               <div className="text-xl font-display font-black text-white break-all tracking-tighter bg-black/40 p-10 rounded-[2rem] border border-white/5 leading-relaxed selection:bg-brand-primary/40">
-                                  {selectedRaffle?.pubkey}
-                               </div>
+                         <p className="text-[12px] font-black uppercase tracking-[0.4em] text-gray-500 italic ml-6">DESTINATION ADDRESS (PDA)</p>
+                         <div className="glass-card !bg-white/5 p-12 space-y-10 border-brand-primary/40">
+                            <div className="text-xl font-display font-black break-all text-center bg-black/60 p-10 rounded-3xl border border-white/5 select-all">
+                               {selectedRaffle?.pubkey}
                             </div>
-                            <button className="btn-primary w-full !py-8 !rounded-[2rem] flex items-center justify-center gap-4 active:scale-95 transition-all">
-                               <Copy className="w-5 h-5" /> COPY TARGET ADDRESS
+                            <button className="btn-primary w-full !py-8 !rounded-3xl flex items-center justify-center gap-4 shadow-3xl shadow-brand-primary/20">
+                               <Copy className="w-6 h-6" /> COPY ADDRESS
                             </button>
                          </div>
                       </div>
                    </div>
                 </div>
 
-                <div className="flex flex-col lg:flex-row justify-between items-center gap-10 border-t border-white/5 pt-16">
-                   <div className="flex items-center gap-8 opacity-40 italic">
+                <div className="flex justify-between items-center p-12 glass bg-brand-primary/5 rounded-[3rem] border-brand-primary/10">
+                   <div className="flex items-center gap-8 italic">
                       <div className="flex items-center gap-3">
-                         <div className="w-2 h-2 bg-brand-secondary rounded-full animate-ping" />
-                         <span className="text-[10px] font-black uppercase tracking-widest text-white">Monitoring Network</span>
+                         <div className="w-3 h-3 bg-brand-secondary rounded-full animate-ping" />
+                         <span className="text-[12px] font-black uppercase tracking-[0.2em]">WATCHING NETWORK</span>
                       </div>
-                      <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">BAGS CLOUD NODE #42X LIVE</span>
+                      <span className="text-[11px] font-black uppercase text-gray-600">BAGSFUND NODE #01 ACTIVE</span>
                    </div>
-                   <button 
-                     onClick={() => setShowCexBridge(false)}
-                     className="px-16 py-6 rounded-full glass hover:bg-white/10 text-[11px] font-black uppercase tracking-[0.4em] text-white transition-all italic"
-                   >
-                     I HAVE SENT THE FUNDS
-                   </button>
+                   <button onClick={() => setShowCexBridge(false)} className="px-16 py-6 rounded-full glass hover:bg-brand-primary/20 text-[12px] font-black uppercase tracking-[0.5em] transition-all">DISMISS</button>
                 </div>
              </motion.div>
           </div>
         )}
 
+        {/* CREATE RAFFLE MODAL (WIZARD) */}
         {showCreateModal && (
-          <div className="fixed inset-0 z-300 flex items-center justify-center p-8 bg-black/90 backdrop-blur-3xl overflow-y-auto">
+          <div className="fixed inset-0 z-200 flex items-center justify-center p-8 bg-black/95 backdrop-blur-3xl overflow-y-auto">
              <motion.div 
-               initial={{ opacity: 0, scale: 0.9, y: 50 }}
-               animate={{ opacity: 1, scale: 1, y: 0 }}
-               exit={{ opacity: 0, scale: 0.9, y: 50 }}
-               className="glass-card !bg-bg-surface p-16 max-w-3xl w-full space-y-16 relative shadow-4xl my-auto"
+               initial={{ opacity: 0, y: 50 }} 
+               animate={{ opacity: 1, y: 0 }}
+               exit={{ opacity: 0, y: 30 }}
+               className="glass-card !bg-bg-dark p-16 max-w-4xl w-full relative shadow-4xl my-auto"
              >
-                <header className="flex justify-between items-start">
-                   <div className="space-y-6 text-left">
-                     <div className="inline-flex items-center gap-3 glass bg-brand-primary/10 px-6 py-2 rounded-full">
-                        <Trophy className="w-4 h-4 text-brand-primary" />
-                        <span className="text-[11px] font-black uppercase tracking-[0.3em] text-brand-primary italic">Hackathon Launchpad</span>
-                     </div>
-                     <h2 className="text-7xl font-display font-black uppercase tracking-tighter italic leading-none text-white">LAUNCH YOUR<br /><span className="text-brand-primary">BOOTSTRAP ROUND</span></h2>
-                     <p className="text-gray-500 text-base font-main italic leading-relaxed max-w-xl">
-                        Design your decentralized fundraiser. Define your goals, set your prize, and invite your community to back your vision.
-                     </p>
+                <header className="flex justify-between items-start mb-16">
+                   <div className="space-y-6">
+                     <span className="text-brand-primary text-[14px] font-black uppercase tracking-[0.6em] italic">Step {createStep} of 3</span>
+                     <h2 className="text-8xl font-display font-black italic tracking-tighter leading-none uppercase">
+                        {createStep === 1 ? 'Configure' : createStep === 2 ? 'Fund' : 'Success'}<br />
+                        <span className="text-brand-primary">Round</span>
+                     </h2>
                    </div>
-                   <button onClick={() => setShowCreateModal(false)} className="w-16 h-16 glass rounded-[2rem] flex items-center justify-center hover:bg-white/5 transition-all"><X className="w-8 h-8 opacity-40" /></button>
+                   <button onClick={() => { setShowCreateModal(false); setCreateStep(1); }} className="w-16 h-16 glass rounded-full flex items-center justify-center"><X /></button>
                 </header>
 
-                <div className="grid md:grid-cols-2 gap-16">
-                   <div className="space-y-12">
-                      <div className="space-y-4 px-2">
-                        <label className="text-[11px] font-black uppercase tracking-[0.4em] text-gray-500 italic block ml-2">Funding Goal (USDC / BAGS)</label>
-                        <div className="relative group">
-                           <input 
+                {createStep === 1 && (
+                  <div className="grid md:grid-cols-2 gap-16">
+                    <div className="space-y-12">
+                       <div className="space-y-4">
+                          <label className="text-[12px] font-black uppercase tracking-[0.4em] text-gray-500 italic ml-6">Prize Pool ($USDC)</label>
+                          <div className="relative group">
+                             <input 
+                                type="number" 
+                                value={newRaffleInfo.prizeAmount}
+                                onChange={(e) => setNewRaffleInfo({...newRaffleInfo, prizeAmount: e.target.value})}
+                                className="w-full glass !bg-white/5 rounded-[2.5rem] p-10 text-5xl font-display font-black text-brand-secondary italic outline-none focus:border-brand-primary transition-all group-hover:bg-white/10"
+                             />
+                             <DollarSign className="absolute right-10 top-1/2 -translate-y-1/2 text-brand-secondary opacity-30" size={32} />
+                          </div>
+                       </div>
+                       <div className="space-y-4">
+                          <label className="text-[12px] font-black uppercase tracking-[0.4em] text-gray-500 italic ml-6">Cost Per Slot</label>
+                          <input 
                               type="number" 
-                              value={prizeAmount}
-                              onChange={(e) => setPrizeAmount(e.target.value)}
-                              className="w-full glass !bg-white/5 rounded-[2.5rem] p-10 text-4xl font-display font-black text-brand-secondary italic shadow-inner outline-none focus:border-brand-primary transition-all group-hover:bg-white/10"
+                              value={newRaffleInfo.ticketPrice}
+                              onChange={(e) => setNewRaffleInfo({...newRaffleInfo, ticketPrice: e.target.value})}
+                              className="w-full glass !bg-white/5 rounded-[2.5rem] p-8 text-2xl font-display font-black italic outline-none focus:border-brand-primary transition-all group-hover:bg-white/10"
                            />
-                           <DollarSign className="absolute right-10 top-1/2 -translate-y-1/2 text-brand-secondary w-8 h-8 opacity-30 group-hover:opacity-100 transition-opacity" />
+                       </div>
+                    </div>
+                    <div className="space-y-12">
+                       <div className="space-y-4">
+                          <label className="text-[12px] font-black uppercase tracking-[0.4em] text-gray-500 italic ml-6">Pitch Description</label>
+                          <textarea 
+                             placeholder="Capture the community vision..."
+                             value={newRaffleInfo.description}
+                             onChange={(e) => setNewRaffleInfo({...newRaffleInfo, description: e.target.value})}
+                             className="w-full glass !bg-white/5 rounded-[2.5rem] p-10 text-lg font-main italic h-48 outline-none focus:border-brand-primary transition-all group-hover:bg-white/10 resize-none"
+                          />
+                       </div>
+                       <button 
+                          onClick={initializeRaffle}
+                          disabled={actionLoading}
+                          className="btn-primary w-full !py-10 !rounded-[2.5rem] text-[14px] flex items-center justify-center gap-4"
+                       >
+                          {actionLoading ? <Loader2 className="animate-spin" /> : 'INITIALIZE ON-CHAIN PDA'}
+                       </button>
+                    </div>
+                  </div>
+                )}
+
+                {createStep === 2 && (
+                  <div className="space-y-12 animate-in fade-in slide-in-from-bottom-5 duration-700">
+                     <div className="bg-yellow-500/10 border border-yellow-500/30 p-12 rounded-[3.5rem] space-y-10">
+                        <div className="flex flex-col md:flex-row justify-between items-center gap-10">
+                           <div className="space-y-4 flex-1">
+                              <h3 className="text-[14px] font-black uppercase tracking-[0.5em] text-yellow-500 italic">BOOTSTRAP DEPOSIT REQUIRED</h3>
+                              <p className="text-gray-400 font-main italic leading-relaxed">System is watching for the following deposit to activate the round. Once detected, the round starts automatically.</p>
+                           </div>
+                           <div className="text-right">
+                              <p className="text-8xl font-display font-black text-white italic tracking-tighter leading-none">{newRaffleInfo.prizeAmount} <span className="text-2xl opacity-40">USDC</span></p>
+                           </div>
                         </div>
-                      </div>
-                      <div className="space-y-4 px-2">
-                        <label className="text-[11px] font-black uppercase tracking-[0.4em] text-gray-500 italic block ml-2">Price Per Slot ($BAGS)</label>
-                        <input 
-                           type="number" 
-                           value={ticketPrice}
-                           onChange={(e) => setTicketPrice(e.target.value)}
-                           className="w-full glass !bg-white/5 rounded-[2.5rem] p-8 text-2xl font-display font-black text-white italic shadow-inner outline-none focus:border-brand-primary transition-all hover:bg-white/10"
-                        />
-                      </div>
-                   </div>
+                        <div className="p-10 glass !bg-black/50 border-white/10 rounded-[2.5rem]">
+                           <div className="text-[11px] font-black uppercase tracking-[0.4em] text-gray-600 mb-6 text-center">TARGET VAULT PDA ADDRESS</div>
+                           <div className="text-xl font-display font-black break-all text-center select-all">{newRaffleInfo.vaultAccount?.toString()}</div>
+                        </div>
+                     </div>
+                     <div className="flex flex-col items-center gap-8 py-10">
+                        <Loader2 className="w-12 h-12 text-brand-primary animate-spin" />
+                        <div className="text-center space-y-2">
+                           <p className="text-[12px] font-black uppercase tracking-[0.4em] text-brand-primary">MONITORING LEDGER</p>
+                           <p className="text-[10px] text-gray-600 font-black uppercase tracking-widest italic">Round activates instantly upon funding verification</p>
+                        </div>
+                     </div>
+                  </div>
+                )}
 
-                   <div className="space-y-12">
-                      <div className="space-y-4 px-2">
-                        <label className="text-[11px] font-black uppercase tracking-[0.4em] text-gray-500 italic block ml-2">Project Vision (Pitch)</label>
-                        <textarea 
-                           placeholder="Describe the problem you are solving and how your community wins with you..."
-                           value={description}
-                           onChange={(e) => setDescription(e.target.value)}
-                           className="w-full glass !bg-white/5 rounded-[2.5rem] p-8 text-lg font-main text-white italic h-44 shadow-inner outline-none focus:border-brand-primary transition-all hover:bg-white/10 resize-none"
-                        />
+                {createStep === 3 && (
+                   <div className="text-center space-y-12 py-20 animate-in zoom-in duration-1000">
+                      <div className="w-32 h-32 bg-brand-secondary/20 rounded-full flex items-center justify-center mx-auto shadow-4xl shadow-brand-secondary/30">
+                         <CheckCircle2 className="w-16 h-16 text-brand-secondary" />
                       </div>
-                      <div className="space-y-6 pt-2">
-                         <div className="flex items-center justify-between px-6 py-8 glass !bg-brand-primary/5 rounded-[2rem] border-white/5">
-                            <div className="space-y-2">
-                               <span className="text-[10px] font-black uppercase tracking-widest text-brand-primary italic">Donation Option</span>
-                               <p className="text-[10px] text-gray-500 font-main italic">Show your support address in result page</p>
-                            </div>
-                            <button 
-                               onClick={() => setShowDonation(!showDonation)}
-                               className={`w-14 h-8 rounded-full p-1 transition-all duration-300 ${showDonation ? 'bg-brand-primary' : 'bg-white/10'}`}
-                            >
-                               <div className={`w-6 h-6 bg-white rounded-full transition-all duration-300 ${showDonation ? 'translate-x-6 shadow-lg shadow-brand-primary/40' : 'translate-x-0'}`} />
-                            </button>
-                         </div>
-                         {showDonation && (
-                            <motion.input 
-                               initial={{ opacity: 0, scale: 0.95 }}
-                               animate={{ opacity: 1, scale: 1 }}
-                               type="text"
-                               placeholder="Enter your SOL Donation Address..."
-                               value={donationAddr}
-                               onChange={(e) => setDonationAddr(e.target.value)}
-                               className="w-full glass !bg-white/5 rounded-[1.5rem] p-4 text-[11px] font-black text-brand-primary italic tracking-widest outline-none focus:border-brand-primary overflow-hidden text-ellipsis"
-                            />
-                         )}
+                      <div className="space-y-4">
+                         <h3 className="text-7xl font-display font-black italic tracking-tighter uppercase">ROUND ACTIVATED</h3>
+                         <p className="text-gray-500 text-[14px] font-black uppercase tracking-[0.4em] italic">Fundraising pool is now open to the public</p>
                       </div>
+                      <button 
+                         onClick={() => { setShowCreateModal(false); setCreateStep(1); }}
+                         className="btn-primary px-20 py-8 !rounded-[2.5rem]"
+                      >
+                         ENTER HUB
+                      </button>
                    </div>
-                </div>
-
-                <div className="space-y-10 pt-8 border-t border-white/5">
-                   <div className="p-10 glass bg-black/40 border-none rounded-[3rem] space-y-6 border border-white/5 shadow-2xl">
-                      <div className="flex justify-between items-center text-3xl font-display font-black italic tracking-tighter">
-                         <span className="text-gray-600 text-[11px] font-black uppercase tracking-[0.3em]">Bootstrap activation deposit</span>
-                         <span className="text-white">{prizeAmount} <span className="text-brand-primary">$USDC</span></span>
-                      </div>
-                      <p className="text-[10px] text-gray-500 italic leading-loose text-center max-w-xl mx-auto">
-                        Once you sign this transaction, the Bags protocol will allocate a unique vault for your project. You must deposit the prize pool to activate the fundraiser.
-                      </p>
-                   </div>
-                   <button 
-                     onClick={() => alert("Initializing On-Chain Fundraiser with Bags SDK Logic...")}
-                     className="btn-primary w-full !rounded-[2.5rem] !py-10 !text-[12px] !font-black !uppercase !tracking-[0.5em] !shadow-3xl shadow-brand-primary/30 hover:scale-[1.01] active:scale-95 transition-all"
-                   >
-                     GENERATE BOOTSTRAP INSTRUCTIONS
-                   </button>
-                </div>
+                )}
              </motion.div>
           </div>
         )}

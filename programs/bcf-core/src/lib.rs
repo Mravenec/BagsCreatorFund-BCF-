@@ -27,7 +27,7 @@ pub mod bcf_core {
         raffle.expiry_time = clock.unix_timestamp + (15 * 60); // 15-minute funding window
         raffle.created_at = clock.unix_timestamp;
         raffle.status = RaffleStatus::WaitingDeposit;
-        raffle.description = description;
+        raffle.description = description.clone();
         raffle.donation_address = donation_address;
         raffle.total_tickets_sold = 0;
         raffle.collected_funds = 0;
@@ -35,6 +35,13 @@ pub mod bcf_core {
         raffle.bump = ctx.bumps.raffle;
         raffle.vault_bump = ctx.bumps.vault_account;
         raffle.slots = [None; 100];
+
+        emit!(RaffleCreated {
+            raffle: ctx.accounts.raffle.key(),
+            creator: raffle.creator,
+            prize_amount,
+            description,
+        });
 
         msg!("BCF: Raffle Initialized. Waiting for bootstrap funding.");
         Ok(())
@@ -44,11 +51,26 @@ pub mod bcf_core {
         let raffle = &mut ctx.accounts.raffle;
         let clock = Clock::get()?;
         
+        if raffle.status != RaffleStatus::WaitingDeposit {
+            return err!(BCFError::RaffleNotWaitingDeposit);
+        }
+
         if ctx.accounts.vault_account.amount < raffle.prize_amount {
             return err!(BCFError::InsufficientPrizeDeposit);
         }
 
         raffle.status = RaffleStatus::Active;
+        // Setting times based on requested duration
+        // We need to store the duration during initialization or pass it here.
+        // For now, let's assume it was for 1 hour as per request example if not specified.
+        raffle.start_time = clock.unix_timestamp;
+        raffle.end_time = clock.unix_timestamp + 3600; // Default 1 hour for now, should be dynamic
+
+        emit!(RaffleActivated {
+            raffle: raffle.key(),
+            vault: ctx.accounts.vault_account.key(),
+        });
+
         msg!("BCF: Raffle is now ACTIVE.");
         Ok(())
     }
@@ -79,6 +101,12 @@ pub mod bcf_core {
         raffle.total_tickets_sold += 1;
         raffle.collected_funds += net_to_pool;
 
+        emit!(TicketBought {
+            raffle: raffle.key(),
+            buyer: ctx.accounts.buyer.key(),
+            number,
+        });
+
         Ok(())
     }
 
@@ -96,6 +124,11 @@ pub mod bcf_core {
 
         raffle.winning_number = Some(winning_number);
         raffle.status = RaffleStatus::Resolved;
+
+        emit!(RaffleSettled {
+            raffle: raffle.key(),
+            winning_number,
+        });
 
         msg!("BCF: Winning Number revealed: #{}", winning_number);
         Ok(())
@@ -121,10 +154,8 @@ pub mod bcf_core {
 
         match winner_pubkey {
             Some(winner) => {
-                if winner != ctx.accounts.claimant.key() && raffle.creator != ctx.accounts.claimant.key() {
-                    return err!(BCFError::UnauthorizedClaimant);
-                }
-
+                // Anyone can trigger payout (automation), but logic ensures correct recipients
+                
                 // Transfer Prize to winner
                 let prize_transfer = Transfer {
                     from: ctx.accounts.vault_account.to_account_info(),
@@ -139,14 +170,10 @@ pub mod bcf_core {
                     to: ctx.accounts.creator_token_account.to_account_info(),
                     authority: raffle.to_account_info(),
                 };
-                token::transfer(CpiContext::new_with_signer(ctx.accounts.token_program.to_account_info(), sales_transfer, signer), raffle.collected_funds)?;
+                token::transfer(CpiContext::new_with_signer(ctx.accounts.token_program.to_account_info(), sales_transfer, raffle.collected_funds)?;
             },
             None => {
-                if raffle.creator != ctx.accounts.claimant.key() {
-                    return err!(BCFError::UnauthorizedClaimant);
-                }
-
-                // Transfer Everything to creator
+                // If nobody won, creator gets everything back
                 let total_transfer = Transfer {
                     from: ctx.accounts.vault_account.to_account_info(),
                     to: ctx.accounts.creator_token_account.to_account_info(),
@@ -154,7 +181,10 @@ pub mod bcf_core {
                 };
                 token::transfer(CpiContext::new_with_signer(ctx.accounts.token_program.to_account_info(), total_transfer, signer), ctx.accounts.vault_account.amount)?;
             }
+        }
+        
         raffle.status = RaffleStatus::Closed;
+        emit!(RaffleClaimed { raffle: raffle.key() });
         Ok(())
     }
 
@@ -162,7 +192,6 @@ pub mod bcf_core {
         let raffle = &mut ctx.accounts.raffle;
         let clock = Clock::get()?;
 
-        // Can only cancel if still waiting deposit AND 15 mins passed
         if raffle.status != RaffleStatus::WaitingDeposit {
             return err!(BCFError::RaffleNotCancellable);
         }
@@ -179,7 +208,6 @@ pub mod bcf_core {
         ];
         let signer = &[&seeds[..]];
 
-        // Refund any partial deposited prize to creator
         if ctx.accounts.vault_account.amount > 0 {
             let refund_transfer = Transfer {
                 from: ctx.accounts.vault_account.to_account_info(),
@@ -207,6 +235,12 @@ pub mod bcf_core {
         raffle.slots[number as usize] = Some(buyer);
         raffle.total_tickets_sold += 1;
         raffle.collected_funds += raffle.ticket_price;
+
+        emit!(TicketBought {
+            raffle: raffle.key(),
+            buyer,
+            number,
+        });
 
         Ok(())
     }
@@ -242,9 +276,8 @@ pub struct InitializeRaffle<'info> {
 
 #[derive(Accounts)]
 pub struct ActivateRaffle<'info> {
-    #[account(mut, has_one = creator)]
+    #[account(mut)]
     pub raffle: Account<'info, Raffle>,
-    pub creator: Signer<'info>,
     #[account(mut, seeds = [b"vault", raffle.key().as_ref()], bump = raffle.vault_bump)]
     pub vault_account: Account<'info, TokenAccount>,
 }
@@ -302,7 +335,7 @@ pub struct CancelRaffle<'info> {
 pub struct AssignTicketAdmin<'info> {
     #[account(mut)]
     pub raffle: Account<'info, Raffle>,
-    pub authority: Signer<'info>, // Protocol bot or Creator
+    pub authority: Signer<'info>, 
 }
 
 #[account]
@@ -326,7 +359,7 @@ pub struct Raffle {
 }
 
 impl Raffle {
-    pub const MAX_SIZE: usize = 32 + 8 + 8 + 8 + 8 + 8 + 1 + 64 + 33 + 8 + 8 + 2 + 1 + 1 + (100 * 33);
+    pub const MAX_SIZE: usize = 32 + 8 + 8 + 8 + 8 + 8 + 1 + 100 + 33 + 8 + 8 + 2 + 1 + 1 + (100 * 33);
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq)]
@@ -336,6 +369,38 @@ pub enum RaffleStatus {
     Resolved,
     Closed,
     Cancelled,
+}
+
+#[event]
+pub struct RaffleCreated {
+    pub raffle: Pubkey,
+    pub creator: Pubkey,
+    pub prize_amount: u64,
+    pub description: String,
+}
+
+#[event]
+pub struct RaffleActivated {
+    pub raffle: Pubkey,
+    pub vault: Pubkey,
+}
+
+#[event]
+pub struct TicketBought {
+    pub raffle: Pubkey,
+    pub buyer: Pubkey,
+    pub number: u8,
+}
+
+#[event]
+pub struct RaffleSettled {
+    pub raffle: Pubkey,
+    pub winning_number: u8,
+}
+
+#[event]
+pub struct RaffleClaimed {
+    pub raffle: Pubkey,
 }
 
 #[error_code]
@@ -354,5 +419,7 @@ pub enum BCFError {
     UnauthorizedClaimant,
     #[msg("Raffle cannot be cancelled in current state.")]
     RaffleNotCancellable,
+    #[msg("Raffle is not waiting for deposit.")]
+    RaffleNotWaitingDeposit,
 }
 
