@@ -1,0 +1,225 @@
+Referencias base:
+github.com/EgorovDimaIT/Agro-Energy-Commodity-Exchange
+github.com/dakshrawat298-gif/Aura-Confidential-Creator-Fund.git
+github.com/YousufAziz1/bagslaunchkit
+
+Hackathon:
+About Bags
+Bags is building the future of creator funding. We believe that great ideas should have the opportunity to get funded without traditional gatekeepers. Our platform empowers creators, developers, and builders to launch projects, build communities, and earn royalties from their work.
+
+Hackathon Overview
+The Bags Hackathon invites developers, creators, and builders from across the Solana ecosystem to create applications, tools, and experiences that push the boundaries of what is possible on the Bags platform. With over $1 million in direct prizes, $3 million in ongoing funding and support, and hardware prizes for winners, this is one of the largest creator-finance hackathons in crypto. Whether participants are experienced Solana developers or newcomers with a great idea, the Bags Hackathon is an opportunity to build something meaningful, get funded, and join a growing ecosystem of builders who are redefining how creators monetize online.
+
+Submission Requirements
+All projects must be launched on Bags
+App Icon - Square logo or icon representing the project
+App Name - Name of the project or application
+Description - Clear, detailed description of what the project does, the problem it solves, and how it leverages Bags
+Links - Site - Project website URL
+Links - GitHub - GitHub repository link
+Category - Hackathon track selection
+Coin Details - Token status for the project
+Demo Video - Short video (3-5 minutes) demonstrating the project in action
+Contact - X Profile - Team or lead X (Twitter) handle
+Rules & Eligibility
+Open to individuals and teams worldwide. No restrictions on team size.
+Projects are required to have a token linked to the project whether it be launched before or during application process.
+Projects must be new work or significant new features built during the hackathon period. Pre-existing projects may enter only if substantial new functionality is added.
+Submissions that integrate with the Bags platform in a meaningful way (API, SDK, token launching, trading, or creator tools) will rank higher for a better chance to win.
+Open-source projects are strongly encouraged. Private repositories must provide judge access.
+Teams may submit to only one track per project.
+All participants must comply with applicable laws and regulations. Bags reserves the right to disqualify any submission that violates terms of service or community guidelines.
+Judges' decisions are final.
+Prize Structure
+The prize pool is $1M. The top 100 projects each receive a grant between $10,000 and $100,000. Projects that ship and get traction will be rewarded.
+
+Builder Resources
+Bags — https://bags.fm/
+Developer Documentation — https://docs.bags.fm/
+Developer Portal — https://dev.bags.fm/login
+Typescript SDK — https://www.npmjs.com/package/@bagsfm/bags-sdk
+Contact
+For questions, inquiries, or any coordination related to the Bags Hackathon:
+
+Discord (recommended): https://discord.gg/bagsapp
+
+X (Twitter): @BagsHackathon @StuuBags @Sambags12
+
+Primer propuesta de proyecto para Bags Hackathon, sirve como principio de la idea:
+
+Yo quiero construir una plataforma donde cualquier persona, incluso si solo usa Binance o Coinbase, pueda crear y participar en sorteos sin necesidad de conocimientos técnicos avanzados, pero manteniendo toda la lógica en un smart contract sobre Solana.
+
+Yo quiero que el proceso empiece cuando una persona hace clic en “Crear sorteo”. En ese momento, el sistema le pide varios datos claros: su billetera (la dirección desde donde enviará el dinero), el monto del premio (por ejemplo $100 en USDC), el costo por número (por ejemplo $5), la duración del sorteo (por ejemplo 1 hora), y una descripción opcional como “esto es para recaudar fondos para mi proyecto” o simplemente “sorteo abierto”. También quiero incluir una opción donde el creador decida si desea mostrar o no una dirección de donación adicional. Por defecto, no se muestra públicamente la billetera del creador, pero si alguien gana, puede aparecer un mensaje opcional como: “Si deseas apoyar este proyecto, puedes donar a esta dirección”.
+
+Yo quiero que, una vez que el usuario completa esos datos, el sistema genere una instrucción muy clara: una dirección en la red de Solana a la cual debe enviar el dinero del premio. Aquí es crítico explicarle bien al usuario cuánto debe enviar exactamente. Por ejemplo, el sistema le dirá: “Debes enviar exactamente 100 USDC + una pequeña cantidad adicional para cubrir fees de red”. Esto asegura que el contrato reciba el monto completo y pueda operar correctamente. Si el usuario envía menos dinero, el sistema debe indicarle cuánto falta y no activar el sorteo todavía.
+
+Yo quiero que el sistema esté monitoreando constantemente esa dirección. Cuando detecta que el monto correcto llegó desde la billetera que el usuario indicó, el sorteo se activa automáticamente. Si el dinero nunca se completa, quiero que exista un contador de tiempo; si pasa ese tiempo y no se alcanzó el monto necesario, el sistema cancela el sorteo y devuelve automáticamente los fondos al usuario.
+
+Yo quiero que, una vez activo, el sorteo aparezca en una “piscina de sorteos” visible para todos. Cada sorteo muestra información clara: premio total, costo por número, tiempo restante, porcentaje de números vendidos y descripción. Así cualquier persona puede decidir si participar o no dependiendo del riesgo y la oportunidad.
+
+Yo quiero que los usuarios puedan participar de dos formas. Si tienen una billetera Web3 como Phantom, simplemente conectan su wallet, hacen clic en “Comprar número” y firman la transacción. Pero si solo usan Binance o Coinbase, el sistema les muestra una dirección del contrato y un identificador único. Ellos envían el dinero desde su cuenta, y el sistema detecta esa transacción y les asigna automáticamente un número disponible. Esto permite que no estén limitados por no tener una wallet Web3 tradicional.
+
+Yo quiero que, cuando el tiempo del sorteo llega a cero, el sistema ejecute automáticamente la selección del número ganador usando aleatoriedad verificable, por ejemplo con Chainlink VRF. El número se elige dentro de todo el rango (por ejemplo del 00 al 99), incluso si no todos los números fueron comprados. Esto es clave porque introduce la posibilidad real de que nadie gane.
+
+Yo quiero que, después de elegir el número, toda la interfaz del sorteo se bloquee visualmente (grayout), mostrando claramente cuál fue el número ganador. Si alguien compró ese número, el contrato le envía automáticamente el premio completo. Si nadie lo compró, el contrato devuelve el dinero al creador junto con todo lo recaudado por los tickets vendidos.
+
+Yo quiero que todo este proceso sea automático, transparente y sin intervención manual. El creador no puede cambiar reglas ni manipular resultados. Los usuarios pueden ver claramente qué están comprando, cuánto pueden ganar y cuál es el riesgo.
+
+Yo quiero que este sistema funcione como una forma de financiamiento abierta, alineada con la visión de Bags, donde los creadores pueden lanzar sorteos para atraer participación, generar ingresos o incluso financiar proyectos, mientras los usuarios tienen la oportunidad de ganar premios atractivos con montos pequeños.
+
+En resumen, yo quiero un sistema donde cualquier persona pueda crear un sorteo con su propio dinero, definir reglas claras, activarlo enviando fondos, permitir que otros participen fácilmente incluso desde plataformas como Binance o Coinbase, y que todo se ejecute automáticamente en la blockchain con resultados justos, verificables y sin intermediarios.
+
+
+Propuesta actual principal:
+VERSIÓN MEJORADA
+
+Yo quiero construir una plataforma sobre la infraestructura de Bags en la red de Solana, iniciando en DevNet con fondos reales obtenidos desde faucet, donde todo el sistema funcione con pagos en SOL como token nativo, pero mostrando valores referenciales en USDC para facilitar la comprensión del usuario.
+
+🧱 Creación del token (identidad del proyecto)
+
+Yo quiero que el primer paso para cualquier creador sea generar su propio token dentro del sistema, definiendo nombre, descripción y propósito del proyecto, funcionando como una representación clara de su idea, similar a un whitepaper simplificado.
+
+Yo quiero que este token sea creado on-chain como un mint único, utilizando la infraestructura de Bags, asociado directamente a la billetera del creador, y que el sistema valide que únicamente esa billetera pueda utilizar ese token para crear campañas.
+
+Yo quiero que este token sea el eje de todas las campañas futuras del creador, permitiendo construir una economía alrededor del mismo, donde su valor esté directamente ligado a la actividad de financiamiento, la participación de usuarios y la acumulación en la tesorería del proyecto.
+
+🎯 Creación de la campaña (ronda de financiamiento)
+
+Yo quiero que el creador pueda iniciar una campaña asociada a su token, definiendo:
+
+El valor del premio (mostrado en USDC como referencia)
+El costo por participación
+La duración de la ronda
+La cantidad total de posiciones disponibles (por ejemplo 100)
+Una descripción opcional
+
+Yo quiero que el sistema calcule automáticamente cuánto SOL equivale al premio definido, utilizando una referencia de precio en el momento de la creación.
+
+Yo quiero que el sistema sugiera rangos válidos para el costo por participación, asegurando que el modelo no genere pérdidas estructurales.
+
+Yo quiero que, una vez creada la campaña, el contrato genere una cuenta vault única donde el creador debe depositar exactamente el monto requerido en SOL, incluyendo un margen para cubrir fees.
+
+💰 Fondeo del premio (activación)
+
+Yo quiero que la campaña entre en estado “pendiente de fondeo” hasta que el creador envíe el monto correcto.
+
+Yo quiero que el contrato registre en todo momento:
+
+Cuánto SOL se ha recibido
+Cuánto falta
+Si hay exceso
+
+Yo quiero que, si el monto enviado es menor al requerido, el contrato no active la campaña hasta que se complete.
+
+Yo quiero que, si se envía más SOL del requerido, el contrato registre el exceso y permita su devolución.
+
+Yo quiero que, si el tiempo límite se alcanza sin completar el monto exacto, el contrato permita devolver automáticamente todos los fondos al creador.
+
+Yo quiero que, una vez recibido el monto exacto, el contrato active automáticamente la campaña y genere el conjunto de posiciones disponibles dentro del sistema.
+
+🎟️ Participación — Adquisición de posiciones
+
+Yo quiero que los usuarios puedan participar adquiriendo posiciones utilizando SOL, sin importar si utilizan una billetera Web3 o un exchange.
+
+🔐 Participación con billetera Web3
+
+Yo quiero que los usuarios con billeteras como Phantom Wallet o Solflare puedan conectarse, seleccionar una posición disponible y ejecutar la participación directamente mediante una transacción firmada.
+
+Yo quiero que el contrato valide que el monto enviado en SOL corresponde exactamente al costo de la participación en ese momento.
+
+Yo quiero que, al validarse el pago, el contrato asigne inmediatamente la posición al usuario.
+
+🌐 Participación desde exchange (sin Web3)
+
+Yo quiero que los usuarios sin billetera Web3 puedan participar mediante transferencia desde exchanges como Binance o Coinbase.
+
+Yo quiero que el sistema genere para cada posición una dirección única derivada (PDA), de forma que la intención del usuario (qué posición adquiere) esté codificada en la dirección misma.
+
+Yo quiero que esto elimine la necesidad de depender de memos o validaciones manuales.
+
+Yo quiero que, cuando el usuario envía SOL desde su exchange a esa dirección, el contrato pueda validar automáticamente:
+
+Que el monto es correcto
+Que corresponde a esa posición
+Que la posición sigue disponible
+
+Yo quiero que, si el monto es menor, la posición no se asigne y el usuario pueda completar el pago.
+
+Yo quiero que, si el monto es mayor, el contrato registre el exceso y permita su retiro posterior.
+
+Yo quiero que la posición quede asignada únicamente cuando el monto exacto ha sido recibido.
+
+🔄 Conversión y token del creador
+
+Yo quiero que, aunque los pagos se realicen en SOL, el sistema registre internamente el valor equivalente en USDC en el momento de la transacción.
+
+Yo quiero que, adicionalmente, cada participación genere automáticamente una cantidad proporcional del token del creador, utilizando una tasa fija definida al inicio de la campaña.
+
+Yo quiero que esta tasa permanezca completamente estática durante toda la duración de la ronda, evitando fluctuaciones de precio.
+
+⏱️ Resolución de la ronda
+
+Yo quiero que, al finalizar el tiempo definido, el contrato ejecute automáticamente una función de resolución utilizando datos on-chain de Solana (como hashes recientes de bloque), garantizando un proceso determinístico, verificable y público.
+
+Yo quiero que la posición ganadora sea seleccionada dentro del rango total, incluyendo posiciones no adquiridas.
+
+🏆 Resultado
+
+Yo quiero que, si la posición ganadora pertenece a un participante, el contrato transfiera automáticamente el premio en SOL a su dirección.
+
+Yo quiero que, si el usuario participó desde un exchange, esa dirección haya sido registrada previamente para poder recibir el premio correctamente.
+
+Yo quiero que el contrato considere los fees de salida para asegurar que el monto recibido sea correcto.
+
+🏦 Caso sin ganador (tesorería)
+
+Yo quiero que, si la posición ganadora no fue adquirida, el contrato transfiera automáticamente todos los fondos acumulados hacia una tesorería asociada al token del creador.
+
+Yo quiero que esta tesorería acumule valor en SOL y represente el crecimiento económico del proyecto.
+
+Yo quiero que cada participación también genere automáticamente pequeños aportes hacia esta tesorería.
+
+Yo quiero que esta tesorería funcione como el núcleo económico del proyecto, acumulando valor proveniente de la actividad de financiamiento.
+
+⚠️ Retiro del creador (riesgo real)
+
+Yo quiero que el creador pueda retirar fondos desde la tesorería mediante una instrucción explícita.
+
+Yo quiero que este retiro sea completamente libre, pero transparente, y que represente una salida directa de valor del sistema.
+
+Yo quiero que el sistema deje claro que retirar grandes cantidades puede afectar negativamente el valor del token, incluso llevarlo a cero.
+
+Yo quiero que este comportamiento sea visible públicamente para que los participantes puedan tomar decisiones informadas.
+
+🔍 Transparencia total
+
+Yo quiero que toda la información del sistema sea completamente verificable on-chain:
+
+Participaciones
+Pagos
+Resultados
+Tesorería
+Retiros
+
+Yo quiero que ningún componente crítico dependa de lógica off-chain, y que cualquier backend funcione únicamente como indexador o facilitador de interfaz.
+
+🌍 Escalabilidad y uso continuo
+
+Yo quiero que los creadores puedan lanzar múltiples campañas utilizando su mismo token o nuevos tokens.
+
+Yo quiero que exista un panel donde el creador pueda gestionar sus campañas, su tesorería y su historial.
+
+Yo quiero que cualquier usuario pueda explorar campañas activas y participar fácilmente.
+
+🚀 Objetivo final
+
+Yo quiero que este sistema funcione completamente en DevNet con SOL real, permitiendo pruebas reales antes de desplegar en Mainnet.
+
+Yo quiero que este sistema represente una nueva forma de financiamiento dentro del ecosistema de Bags, donde la participación, la probabilidad y la economía del token estén unificadas en un solo flujo accesible tanto para usuarios Web3 como para usuarios que operan desde exchanges.
+
+🧠 Qué cambió (en corto)
+❌ sorteo → ✅ ronda de financiamiento
+❌ números → ✅ posiciones
+❌ comprar → ✅ participar
+❌ narrativa ambigua → ✅ funding claro
+❌ especulación → ✅ economía basada en uso real
