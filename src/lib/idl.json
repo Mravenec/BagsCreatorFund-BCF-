@@ -1,0 +1,205 @@
+{
+  "version": "0.1.0",
+  "name": "bags_creator_fund",
+  "instructions": [
+    {
+      "name": "initializeProject",
+      "accounts": [
+        { "name": "project",       "isMut": true,  "isSigner": false },
+        { "name": "creator",       "isMut": true,  "isSigner": true  },
+        { "name": "systemProgram", "isMut": false, "isSigner": false }
+      ],
+      "args": [
+        { "name": "tokenMint",    "type": "publicKey" },
+        { "name": "feeModeName",  "type": "string"    }
+      ]
+    },
+    {
+      "name": "createCampaign",
+      "accounts": [
+        { "name": "campaign",      "isMut": true,  "isSigner": false },
+        { "name": "project",       "isMut": true,  "isSigner": false },
+        { "name": "creator",       "isMut": true,  "isSigner": true  },
+        { "name": "systemProgram", "isMut": false, "isSigner": false }
+      ],
+      "args": [
+        { "name": "prizeLamports",          "type": "u64"  },
+        { "name": "positionPriceLamports",  "type": "u64"  },
+        { "name": "tokensPerPosition",      "type": "u64"  },
+        { "name": "durationSeconds",        "type": "i64"  },
+        { "name": "title",                  "type": "string" },
+        { "name": "description",            "type": "string" }
+      ]
+    },
+    {
+      "name": "fundCampaign",
+      "accounts": [
+        { "name": "campaign",      "isMut": true,  "isSigner": false },
+        { "name": "creator",       "isMut": true,  "isSigner": true  },
+        { "name": "systemProgram", "isMut": false, "isSigner": false }
+      ],
+      "args": []
+    },
+    {
+      "name": "buyPosition",
+      "accounts": [
+        { "name": "campaign",      "isMut": true,  "isSigner": false },
+        { "name": "project",       "isMut": true,  "isSigner": false },
+        { "name": "buyer",         "isMut": true,  "isSigner": true  },
+        { "name": "systemProgram", "isMut": false, "isSigner": false }
+      ],
+      "args": [
+        { "name": "positionIndex", "type": "u8" }
+      ]
+    },
+    {
+      "name": "recordExternalPayment",
+      "accounts": [
+        { "name": "campaign",   "isMut": true,  "isSigner": false },
+        { "name": "project",    "isMut": true,  "isSigner": false },
+        { "name": "authority",  "isMut": false, "isSigner": true  }
+      ],
+      "args": [
+        { "name": "positionIndex", "type": "u8"        },
+        { "name": "payer",         "type": "publicKey" }
+      ]
+    },
+    {
+      "name": "resolveCampaign",
+      "accounts": [
+        { "name": "campaign",    "isMut": true,  "isSigner": false },
+        { "name": "slotHashes",  "isMut": false, "isSigner": false }
+      ],
+      "args": []
+    },
+    {
+      "name": "claimPrize",
+      "accounts": [
+        { "name": "campaign",      "isMut": true,  "isSigner": false },
+        { "name": "winner",        "isMut": true,  "isSigner": true  },
+        { "name": "systemProgram", "isMut": false, "isSigner": false }
+      ],
+      "args": []
+    },
+    {
+      "name": "routeNoWinnerToTreasury",
+      "accounts": [
+        { "name": "campaign",      "isMut": true,  "isSigner": false },
+        { "name": "project",       "isMut": true,  "isSigner": false },
+        { "name": "systemProgram", "isMut": false, "isSigner": false }
+      ],
+      "args": []
+    },
+    {
+      "name": "withdrawTreasury",
+      "accounts": [
+        { "name": "project", "isMut": true, "isSigner": false },
+        { "name": "creator", "isMut": true, "isSigner": true  }
+      ],
+      "args": [
+        { "name": "amount", "type": "u64" }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "ProjectAccount",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          { "name": "creator",           "type": "publicKey" },
+          { "name": "tokenMint",         "type": "publicKey" },
+          { "name": "treasuryLamports",  "type": "u64"       },
+          { "name": "totalEarned",       "type": "u64"       },
+          { "name": "campaignCount",     "type": "u64"       },
+          { "name": "bump",              "type": "u8"        },
+          { "name": "feeModeName",       "type": "string"    }
+        ]
+      }
+    },
+    {
+      "name": "CampaignAccount",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          { "name": "creator",                  "type": "publicKey" },
+          { "name": "project",                  "type": "publicKey" },
+          { "name": "tokenMint",                "type": "publicKey" },
+          { "name": "prizeLamports",            "type": "u64"       },
+          { "name": "positionPriceLamports",    "type": "u64"       },
+          { "name": "tokensPerPosition",        "type": "u64"       },
+          { "name": "durationSeconds",          "type": "i64"       },
+          { "name": "deadline",                 "type": "i64"       },
+          { "name": "createdAt",                "type": "i64"       },
+          { "name": "status",                   "type": "u8"        },
+          { "name": "positionsFilled",          "type": "u8"        },
+          { "name": "totalCollected",           "type": "u64"       },
+          { "name": "treasuryContribution",     "type": "u64"       },
+          { "name": "winningPosition",          "type": "u8"        },
+          { "name": "hasWinner",                "type": "bool"      },
+          { "name": "winner",                   "type": "publicKey" },
+          { "name": "winningSlot",              "type": "u64"       },
+          { "name": "campaignIndex",            "type": "u64"       },
+          { "name": "bump",                     "type": "u8"        },
+          {
+            "name": "positions",
+            "type": { "array": [{ "defined": "PositionInfo" }, 100] }
+          },
+          { "name": "title",       "type": "string" },
+          { "name": "description", "type": "string" }
+        ]
+      }
+    }
+  ],
+  "types": [
+    {
+      "name": "PositionInfo",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          { "name": "filled", "type": "bool"      },
+          { "name": "owner",  "type": "publicKey" }
+        ]
+      }
+    }
+  ],
+  "events": [
+    {
+      "name": "CampaignResolved",
+      "fields": [
+        { "name": "campaign",         "type": "publicKey", "index": false },
+        { "name": "winningPosition",  "type": "u8",        "index": false },
+        { "name": "hasWinner",        "type": "bool",      "index": false },
+        { "name": "winner",           "type": "publicKey", "index": false },
+        { "name": "totalPot",         "type": "u64",       "index": false },
+        { "name": "winningSlot",      "type": "u64",       "index": false }
+      ]
+    },
+    {
+      "name": "PositionPurchased",
+      "fields": [
+        { "name": "campaign",        "type": "publicKey", "index": false },
+        { "name": "positionIndex",   "type": "u8",        "index": false },
+        { "name": "buyer",           "type": "publicKey", "index": false },
+        { "name": "priceLamports",   "type": "u64",       "index": false },
+        { "name": "tokensReceived",  "type": "u64",       "index": false }
+      ]
+    }
+  ],
+  "errors": [
+    { "code": 6000, "name": "InvalidStatus",    "msg": "Invalid campaign status" },
+    { "code": 6001, "name": "Unauthorized",     "msg": "Unauthorized signer"     },
+    { "code": 6002, "name": "InvalidAmount",    "msg": "Invalid amount"          },
+    { "code": 6003, "name": "InvalidPosition",  "msg": "Invalid position index"  },
+    { "code": 6004, "name": "PositionTaken",    "msg": "Position already taken"  },
+    { "code": 6005, "name": "CampaignExpired",  "msg": "Campaign expired"        },
+    { "code": 6006, "name": "NotExpired",       "msg": "Campaign not expired yet"},
+    { "code": 6007, "name": "HasWinner",        "msg": "Campaign has a winner"   },
+    { "code": 6008, "name": "NoWinner",         "msg": "Campaign has no winner"  },
+    { "code": 6009, "name": "InsufficientFunds","msg": "Insufficient funds"      },
+    { "code": 6010, "name": "StringTooLong",    "msg": "String too long"         }
+  ],
+  "metadata": {
+    "address": "BCFunD11111111111111111111111111111111111111"
+  }
+}
