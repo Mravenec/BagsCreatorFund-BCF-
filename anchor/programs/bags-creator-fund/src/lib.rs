@@ -16,13 +16,13 @@
 use anchor_lang::prelude::*;
 use anchor_lang::system_program;
 
-declare_id!("BCFunD11111111111111111111111111111111111111");
+declare_id!("Rx1XswVLMPFAw48m2hVbKeM3eJYkZWNLe1ER5QzLg3L");
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const MAX_TITLE:     usize = 100;
 const MAX_DESC:      usize = 500;
 const MAX_FEE_NAME:  usize = 40;
-const POSITIONS:     usize = 100;
+const POSITIONS:     usize = 20;
 const TREASURY_BPS:  u64   = 200;  // 2%
 const MIN_PRIZE:     u64   = 1_000_000;   // 0.001 SOL
 const MIN_PRICE:     u64   = 1_000;       // 0.000001 SOL
@@ -81,10 +81,11 @@ pub struct TreasuryWithdrawal {
 // ─── Data Structs ─────────────────────────────────────────────────────────────
 /// One position in the funding round grid (00–99)
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy)]
+#[repr(C)]
 pub struct PositionInfo {
     pub filled: bool,   // 1 byte
     pub owner:  Pubkey, // 32 bytes
-}  // total: 33 bytes per position
+}
 
 impl Default for PositionInfo {
     fn default() -> Self {
@@ -140,8 +141,8 @@ pub struct CampaignAccount {
     // Metadata
     pub campaign_index:            u64,     // 8
     pub bump:                      u8,      // 1
-    // Positions (the 100-slot grid)
-    pub positions: [PositionInfo; 100],     // 33 * 100 = 3300
+    // Positions (the grid)
+    pub positions: [PositionInfo; 20],      // 33 * 20 = 660
     // Text
     pub title:       String,                // 4 + MAX_TITLE
     pub description: String,               // 4 + MAX_DESC
@@ -191,7 +192,7 @@ pub struct CreateCampaign<'info> {
         ],
         bump
     )]
-    pub campaign: Account<'info, CampaignAccount>,
+    pub campaign: Box<Account<'info, CampaignAccount>>,
 
     #[account(
         mut,
@@ -199,7 +200,7 @@ pub struct CreateCampaign<'info> {
         bump  = project.bump,
         has_one = creator @ BCFError::Unauthorized,
     )]
-    pub project: Account<'info, ProjectAccount>,
+    pub project: Box<Account<'info, ProjectAccount>>,
 
     #[account(mut)]
     pub creator: Signer<'info>,
@@ -212,7 +213,7 @@ pub struct FundCampaign<'info> {
         mut,
         has_one = creator @ BCFError::Unauthorized,
     )]
-    pub campaign: Account<'info, CampaignAccount>,
+    pub campaign: Box<Account<'info, CampaignAccount>>,
 
     #[account(mut)]
     pub creator: Signer<'info>,
@@ -222,14 +223,14 @@ pub struct FundCampaign<'info> {
 #[derive(Accounts)]
 pub struct BuyPosition<'info> {
     #[account(mut)]
-    pub campaign: Account<'info, CampaignAccount>,
+    pub campaign: Box<Account<'info, CampaignAccount>>,
 
     #[account(
         mut,
         seeds = [b"project", campaign.creator.as_ref()],
         bump  = project.bump,
     )]
-    pub project: Account<'info, ProjectAccount>,
+    pub project: Box<Account<'info, ProjectAccount>>,
 
     #[account(mut)]
     pub buyer: Signer<'info>,
@@ -239,14 +240,14 @@ pub struct BuyPosition<'info> {
 #[derive(Accounts)]
 pub struct RecordExternalPayment<'info> {
     #[account(mut)]
-    pub campaign: Account<'info, CampaignAccount>,
+    pub campaign: Box<Account<'info, CampaignAccount>>,
 
     #[account(
         mut,
         seeds = [b"project", campaign.creator.as_ref()],
         bump  = project.bump,
     )]
-    pub project: Account<'info, ProjectAccount>,
+    pub project: Box<Account<'info, ProjectAccount>>,
 
     /// Campaign creator authorizes this after verifying CEX payment off-chain
     #[account(
@@ -258,7 +259,7 @@ pub struct RecordExternalPayment<'info> {
 #[derive(Accounts)]
 pub struct ResolveCampaign<'info> {
     #[account(mut)]
-    pub campaign: Account<'info, CampaignAccount>,
+    pub campaign: Box<Account<'info, CampaignAccount>>,
 
     /// CHECK: We manually read the slot hashes sysvar for randomness
     #[account(address = anchor_lang::solana_program::sysvar::slot_hashes::ID)]
@@ -273,7 +274,7 @@ pub struct ClaimPrize<'info> {
         constraint = campaign.has_winner    @ BCFError::NoWinner,
         constraint = winner.key() == campaign.winner @ BCFError::Unauthorized,
     )]
-    pub campaign: Account<'info, CampaignAccount>,
+    pub campaign: Box<Account<'info, CampaignAccount>>,
 
     #[account(mut)]
     pub winner: Signer<'info>,
@@ -287,14 +288,14 @@ pub struct RouteToTreasury<'info> {
         constraint = campaign.status == 2  @ BCFError::InvalidStatus,
         constraint = !campaign.has_winner  @ BCFError::HasWinner,
     )]
-    pub campaign: Account<'info, CampaignAccount>,
+    pub campaign: Box<Account<'info, CampaignAccount>>,
 
     #[account(
         mut,
         seeds = [b"project", campaign.creator.as_ref()],
         bump  = project.bump,
     )]
-    pub project: Account<'info, ProjectAccount>,
+    pub project: Box<Account<'info, ProjectAccount>>,
 
     pub system_program: Program<'info, System>,
 }
@@ -414,7 +415,7 @@ pub mod bags_creator_fund {
         campaign.campaign_index          = project.campaign_count;
         campaign.bump                    = ctx.bumps.campaign;
 
-        // Zero-initialize all 100 positions
+        // Zero-initialize all 20 positions
         campaign.positions = [PositionInfo::default(); POSITIONS];
 
         project.campaign_count = project.campaign_count.checked_add(1).unwrap();
@@ -556,7 +557,7 @@ pub mod bags_creator_fund {
     }
 
     /// Resolve the campaign: derive winning position from Solana slot hash (deterministic, public)
-    /// Formula: winning_position = u64::from_le_bytes(slot_hash[0..8]) % 100
+    /// Formula: winning_position = u64::from_le_bytes(slot_hash[0..8]) % 20
     pub fn resolve_campaign(ctx: Context<ResolveCampaign>) -> Result<()> {
         let campaign = &mut ctx.accounts.campaign;
         require!(campaign.status == 1, BCFError::InvalidStatus);
@@ -573,10 +574,10 @@ pub mod bags_creator_fund {
                 .try_into()
                 .unwrap_or([0u8; 8]);
             let hash_num = u64::from_le_bytes(hash_bytes);
-            (hash_num % 100) as u8
+            (hash_num % (POSITIONS as u64)) as u8
         } else {
             // Fallback: use current slot
-            (clock.slot % 100) as u8
+            (clock.slot % (POSITIONS as u64)) as u8
         };
 
         campaign.winning_position = winning_position;
@@ -602,18 +603,18 @@ pub mod bags_creator_fund {
 
     /// Winner claims their prize — all SOL in campaign account goes to them
     pub fn claim_prize(ctx: Context<ClaimPrize>) -> Result<()> {
-        let campaign = &mut ctx.accounts.campaign;
+        let campaign = &ctx.accounts.campaign;
 
         let total    = campaign.prize_lamports.checked_add(campaign.total_collected).unwrap();
         let rent_min = Rent::get()?.minimum_balance(CampaignAccount::SPACE);
         let to_pay   = total.min(
-            campaign.to_account_info().lamports().saturating_sub(rent_min)
+            ctx.accounts.campaign.to_account_info().lamports().saturating_sub(rent_min)
         );
 
         require!(to_pay > 0, BCFError::InsufficientFunds);
 
         // Direct lamport manipulation (program owns this account)
-        **campaign.to_account_info().try_borrow_mut_lamports()? -= to_pay;
+        **ctx.accounts.campaign.to_account_info().try_borrow_mut_lamports()? -= to_pay;
         **ctx.accounts.winner.try_borrow_mut_lamports()?         += to_pay;
 
         Ok(())
@@ -621,8 +622,9 @@ pub mod bags_creator_fund {
 
     /// Route prize to project treasury when winning position was unclaimed
     pub fn route_no_winner_to_treasury(ctx: Context<RouteToTreasury>) -> Result<()> {
-        let total    = ctx.accounts.campaign.prize_lamports
-            .checked_add(ctx.accounts.campaign.total_collected)
+        let campaign = &ctx.accounts.campaign;
+        let total    = campaign.prize_lamports
+            .checked_add(campaign.total_collected)
             .unwrap();
 
         let rent_min = Rent::get()?.minimum_balance(CampaignAccount::SPACE);

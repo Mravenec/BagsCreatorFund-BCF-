@@ -92,7 +92,7 @@
     {
       "name": "fundCampaign",
       "docs": [
-        "Step 3: Creator deposits prize SOL into campaign account \u2192 activates it",
+        "Step 3: Creator deposits prize SOL into campaign account → activates it",
         "The campaign account itself acts as the vault (program-owned)"
       ],
       "accounts": [
@@ -117,7 +117,7 @@
     {
       "name": "buyPosition",
       "docs": [
-        "Web3 wallet user buys a specific position (00\u201399)"
+        "Web3 wallet user buys a specific position (00–99)"
       ],
       "accounts": [
         {
@@ -152,7 +152,7 @@
       "name": "recordExternalPayment",
       "docs": [
         "Record a CEX/external payment after creator verifies it off-chain",
-        "The creator is the trusted authority for this \u2014 all actions are on-chain and visible",
+        "The creator is the trusted authority for this — all actions are on-chain and visible",
         "In production: replace with oracle or ZK proof of payment"
       ],
       "accounts": [
@@ -209,7 +209,7 @@
     {
       "name": "claimPrize",
       "docs": [
-        "Winner claims their prize \u2014 all SOL in campaign account goes to them"
+        "Winner claims their prize — all SOL in campaign account goes to them"
       ],
       "accounts": [
         {
@@ -258,7 +258,7 @@
       "name": "withdrawTreasury",
       "docs": [
         "Creator withdraws from project treasury",
-        "All withdrawals are emitted as events \u2014 fully transparent to community"
+        "All withdrawals are emitted as events — fully transparent to community"
       ],
       "accounts": [
         {
@@ -284,7 +284,7 @@
     {
       "name": "ProjectAccount",
       "docs": [
-        "Creator's project account \u2014 links Bags token, holds treasury"
+        "Creator's project account — links Bags token, holds treasury"
       ],
       "type": {
         "kind": "struct",
@@ -323,7 +323,7 @@
     {
       "name": "CampaignAccount",
       "docs": [
-        "Funding campaign \u2014 holds ALL SOL (acts as vault), tracks all positions"
+        "Funding campaign — holds ALL SOL (acts as vault), tracks all positions"
       ],
       "type": {
         "kind": "struct",
@@ -431,7 +431,7 @@
     {
       "name": "PositionInfo",
       "docs": [
-        "One position in the funding round grid (00\u201399)"
+        "One position in the funding round grid (00–99)"
       ],
       "type": {
         "kind": "struct",
@@ -624,7 +624,7 @@
     {
       "code": 6003,
       "name": "InvalidPosition",
-      "msg": "Invalid position index (must be 0\u201399)"
+      "msg": "Invalid position index (must be 0–99)"
     },
     {
       "code": 6004,
@@ -644,7 +644,7 @@
     {
       "code": 6007,
       "name": "HasWinner",
-      "msg": "Campaign has a winner \u2014 use claim_prize"
+      "msg": "Campaign has a winner — use claim_prize"
     },
     {
       "code": 6008,
@@ -661,8 +661,5 @@
       "name": "StringTooLong",
       "msg": "String exceeds maximum length"
     }
-  ],
-  "metadata": {
-    "address": "Rx1XswVLMPFAw48m2hVbKeM3eJYkZWNLe1ER5QzLg3L"
-  }
+  ]
 }

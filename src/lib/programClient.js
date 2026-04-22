@@ -15,7 +15,7 @@ import IDL from './idl.json';
 
 // ─── Program ID ────────────────────────────────────────────────────────────────
 // IMPORTANT: Replace this after running `anchor deploy` in the anchor/ directory
-export const PROGRAM_ID = new PublicKey('BCFunD11111111111111111111111111111111111111');
+export const PROGRAM_ID = new PublicKey('Rx1XswVLMPFAw48m2hVbKeM3eJYkZWNLe1ER5QzLg3L');
 
 // ─── PDA Derivation ────────────────────────────────────────────────────────────
 export function getProjectPDA(creatorPubkey) {

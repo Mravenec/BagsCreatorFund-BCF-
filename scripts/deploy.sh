@@ -24,6 +24,11 @@ downgrade_lockfile() {
 # ─── remove [patch.crates-io] block ───────────────────────────────────────────
 remove_patch_block() {
   local toml="${1:-Cargo.toml}"
+  # Don't remove if it contains our manual BPF compat patch
+  if grep -q 'BPF compat:' "$toml" 2>/dev/null; then
+    echo -e "  ${CYAN}ℹ Keeping manual BPF compat patch in $(basename "$toml")${NC}"
+    return 0
+  fi
   if grep -q 'Compatibility pins' "$toml" 2>/dev/null; then
     sed -i '/^# ── Compatibility pins/,$d' "$toml"
     echo -e "  ${GREEN}✓ Removed stale pins comment from $(basename "$toml")${NC}"
@@ -120,8 +125,7 @@ PYEOF
 
 # ─── prepare a BPF-compatible Cargo.lock ──────────────────────────────────────
 prepare_lockfile() {
-  echo "  Generating Cargo.lock with system cargo (1.95)..."
-  cargo generate-lockfile 2>&1 || true
+  echo "  Using existing Cargo.lock with manual pins..."
   downgrade_lockfile
 
   # Try pinning each incompatible version using the @version syntax
@@ -153,13 +157,13 @@ prepare_lockfile() {
 
 # ─── anchor build with lockfile fix on retry ──────────────────────────────────
 try_anchor_build() {
-  echo "  Running: anchor build"
-  if anchor build 2>&1; then
-    return 0
-  fi
-  downgrade_lockfile
-  echo "  Retrying anchor build..."
-  if anchor build 2>&1; then
+  echo "  Running: anchor build (with lockfile fix and temp target)"
+  sed -i 's/version = 4/version = 3/' Cargo.lock
+  if CARGO_TARGET_DIR=/tmp/target anchor build 2>&1; then
+    mkdir -p target/deploy target/idl
+    cp /tmp/target/deploy/*.so target/deploy/ 2>/dev/null || true
+    cp /tmp/target/deploy/*.json target/deploy/ 2>/dev/null || true
+    cp /tmp/target/idl/*.json target/idl/ 2>/dev/null || true
     return 0
   fi
   return 1
@@ -228,20 +232,20 @@ if grep -q 'members = \["programs/\*"\]' Anchor.toml 2>/dev/null; then
   sed -i 's|members = \["programs/\*"\]|members = \["programs/bags-creator-fund"\]|' Anchor.toml
 fi
 
-echo "  Removing any stale [patch.crates-io] blocks..."
-remove_patch_block "Cargo.toml"
-remove_patch_block "programs/bags-creator-fund/Cargo.toml"
+echo "  Manual BPF stabilization already applied. Skipping cleanup."
+# remove_patch_block "Cargo.toml"
+# remove_patch_block "programs/bags-creator-fund/Cargo.toml"
 
 echo "  Checking crate version pins..."
 pin_crates_as_deps
 
 echo "  Cleaning target/ and Cargo.lock..."
 rm -rf target
-rm -f Cargo.lock
+# rm -f Cargo.lock
 
 echo ""
-echo "  Preparing compatible Cargo.lock..."
-prepare_lockfile
+echo "  Using manually stabilized Cargo.lock..."
+# prepare_lockfile
 
 echo ""
 echo "Building Anchor program (this may take 2–3 minutes)..."
@@ -292,13 +296,21 @@ sed -i "s/bags-creator-fund = \"[^\"]*\"/bags-creator-fund = \"$PROGRAM_ID\"/" \
   "$ANCHOR_DIR/Anchor.toml"
 sed -i "s/new PublicKey('[^']*')/new PublicKey('$PROGRAM_ID')/" \
   "$PROJECT_ROOT/src/lib/programClient.js"
-node -e "
-  const fs=require('fs'), p='$PROJECT_ROOT/src/lib/idl.json';
-  const idl=JSON.parse(fs.readFileSync(p,'utf8'));
-  idl.metadata=idl.metadata||{}; idl.metadata.address='$PROGRAM_ID';
-  fs.writeFileSync(p,JSON.stringify(idl,null,2));
-  console.log('  idl.json updated ✓');
-"
+cp "$ANCHOR_DIR/target/idl/bags_creator_fund.json" "$PROJECT_ROOT/src/lib/idl.json"
+python3 << PYEOF
+import json, os
+path = '$PROJECT_ROOT/src/lib/idl.json'
+if os.path.exists(path):
+    with open(path, 'r') as f:
+        idl = json.load(f)
+    idl['metadata'] = idl.get('metadata', {})
+    idl['metadata']['address'] = '$PROGRAM_ID'
+    with open(path, 'w') as f:
+        json.dump(idl, f, indent=2)
+    print('  idl.json updated and synchronized ✓')
+else:
+    print('  idl.json not found, skipping...')
+PYEOF
 
 echo "  Final rebuild with embedded Program ID..."
 if ! try_anchor_build; then
@@ -308,7 +320,12 @@ echo -e "${GREEN}✓ All files patched and rebuilt${NC}"
 
 echo ""
 echo -e "${YELLOW}[6/6] Deploying to Solana DevNet...${NC}"
-anchor deploy --provider.cluster devnet
+# Use solana program deploy for better control and retries
+solana program deploy \
+  --program-id "$PROGRAM_ID" \
+  --keypair "$HOME/.config/solana/id.json" \
+  --commitment confirmed \
+  "target/deploy/bags_creator_fund.so"
 
 echo ""
 echo -e "${GREEN}╔══════════════════════════════════════════════════════════════╗${NC}"

@@ -3,7 +3,7 @@ seeds = false
 skip-lint = false
 
 [programs.devnet]
-bags-creator-fund = "BCFunD11111111111111111111111111111111111111"
+bags-creator-fund = "Rx1XswVLMPFAw48m2hVbKeM3eJYkZWNLe1ER5QzLg3L"
 
 [registry]
 url = "https://api.apr.dev"
@@ -16,4 +16,4 @@ wallet = "~/.config/solana/id.json"
 test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"
 
 [workspace]
-members = ["programs/*"]
+members = ["programs/bags-creator-fund"]
