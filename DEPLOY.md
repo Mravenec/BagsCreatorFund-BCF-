@@ -14,7 +14,31 @@ Now it uses a **real Anchor smart contract on Solana DevNet**.
 
 ---
 
-## Prerequisites (install once)
+## 🚀 Quick Start: The "One-Command" Deploy
+
+To build the program, fix all BPF dependencies, deploy to DevNet, and launch the frontend automatically, run this single command in **WSL**:
+
+```bash
+# Go to the project root
+cd "/mnt/c/Users/kcamp/CascadeProjects/solanaProject/BagsCreatorFund(BCF)"
+
+# Run the magic script
+bash scripts/deploy.sh
+```
+
+---
+
+## 🛠️ What the Script Does for You
+1.  **Validates Tools**: Checks for Solana, Anchor, and Node.
+2.  **Stabilizes BPF**: Automatically pins dependencies (`borsh`, `indexmap`, etc.) to work with the Solana Rust 1.75 toolchain.
+3.  **Fixes Stack Limits**: Ensures the program uses Heap (Box) instead of Stack to avoid `Stack offset exceeded` errors.
+4.  **Deploys to DevNet**: Uploads the smart contract to Solana.
+5.  **Syncs Frontend**: Updates `idl.json` and `programClient.js` with the new Program ID.
+6.  **Launches App**: Runs `npm install` and `npm run dev` automatically.
+
+---
+
+## 🎒 Prerequisites (Install Once in WSL)
 
 ```bash
 # 1. Rust

@@ -334,11 +334,18 @@ echo -e "${GREEN}╚════════════════════
 echo ""
 echo -e "  Program ID : ${CYAN}$PROGRAM_ID${NC}"
 echo -e "  Explorer   : ${CYAN}https://explorer.solana.com/address/$PROGRAM_ID?cluster=devnet${NC}"
-echo ""
 echo -e "${YELLOW}Next steps:${NC}"
-echo -e "  cd $PROJECT_ROOT && npm install && npm run dev"
+echo -e "  The script will now attempt to install dependencies and launch the frontend..."
 echo ""
-echo -e "${YELLOW}Phantom setup:${NC}"
-echo -e "  Settings → Developer Settings → Devnet"
-echo -e "  Dashboard → Airdrop 2 SOL → Create Token → Create Campaign"
+
+# Go back to project root and launch
+cd "$PROJECT_ROOT"
+if npm install; then
+  echo -e "${GREEN}✓ Dependencies installed${NC}"
+  echo -e "${CYAN}Launching frontend (npm run dev)...${NC}"
+  npm run dev
+else
+  echo -e "${RED}✗ npm install failed. Please run 'npm install && npm run dev' manually in Windows or WSL.${NC}"
+fi
+
 echo ""
