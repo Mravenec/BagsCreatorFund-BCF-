@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { posStatus, totalPot, timeLeft, isExpired, fmtPos } from '../lib/store.js';
+import { posStatus, totalPot, timeLeft, isExpired, fmtPos } from '../lib/programClient.js';
 import { toUSDC } from '../lib/constants.js';
 import { shortAddr } from '../lib/solana.js';
 

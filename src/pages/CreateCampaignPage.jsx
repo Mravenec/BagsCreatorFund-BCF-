@@ -1,15 +1,20 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate, useSearchParams, Link } from "react-router-dom";
-import { useWallet } from "@solana/wallet-adapter-react";
+import { useWallet, useConnection, useAnchorWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
-import { getToken, getCreatorTokens, createCampaign } from "../lib/store.js";
+import {
+  fetchProject, createCampaignOnChain,
+} from "../lib/programClient.js";
+import { AnchorProvider, BN } from "@coral-xyz/anchor";
+import { LAMPORTS_PER_SOL } from "@solana/web3.js";
 import { toUSDC, fromUSDC, DURATIONS, TREASURY_FEE_PCT, CATEGORIES } from "../lib/constants.js";
 import { useToast } from "../components/Toast.jsx";
 
 const STEPS = ["Campaign Info", "Funding Economics", "Review & Launch"];
 
 export default function CreateCampaignPage() {
-  const { connected, publicKey } = useWallet();
+  const { connection } = useConnection();
+  const wallet = useAnchorWallet();
   const { setVisible } = useWalletModal();
   const navigate = useNavigate();
   const toast = useToast();
@@ -32,12 +37,29 @@ export default function CreateCampaignPage() {
   });
 
   useEffect(() => {
-    if (connected && publicKey) {
-      setMyTokens(getCreatorTokens(publicKey.toBase58()));
+    async function load() {
+      if (wallet) {
+        const provider = new AnchorProvider(connection, wallet, { commitment: "confirmed" });
+        const project = await fetchProject(provider, wallet.publicKey.toBase58());
+        if (project) {
+          setMyTokens([{
+            mint: project.tokenMint.toBase58(),
+            symbol: "???",
+            name: "Bags Token"
+          }]);
+        }
+      }
     }
-  }, [connected, publicKey]);
+    load();
+  }, [wallet, connection]);
 
   const set = (k,v) => { setForm(f=>({...f,[k]:v})); setErrors(e=>({...e,[k]:""})); };
+
+  // Helper to find token info
+  const getToken = (mint) => {
+    return myTokens.find(t => t.mint === mint) || { name: "Bags Token", symbol: "???" };
+  };
+
   const selectedToken = form.tokenMint ? getToken(form.tokenMint) : null;
   const prize = Number(form.prizeSOL)||0;
   const ticketPrice = Number(form.positionPriceSOL)||0;
@@ -62,26 +84,33 @@ export default function CreateCampaignPage() {
   }
 
   async function handleLaunch() {
-    if (!connected) { setVisible(true); return; }
+    if (!wallet) {
+      toast("Please connect your wallet first", "error");
+      setVisible(true);
+      return;
+    }
     setLoading(true);
     try {
-      const campaign = createCampaign({
-        tokenMint:        form.tokenMint,
-        tokenSymbol:      selectedToken?.symbol || "???",
-        creatorWallet:    publicKey.toBase58(),
-        title:            form.title,
-        description:      form.description,
-        category:         form.category,
-        prizeSOL:         prize,
-        positionPriceSOL: ticketPrice,
-        durationHours:    Number(form.durationHours),
-        showDonation:     form.showDonation,
-        donationAddress:  form.showDonation ? (form.donationAddress || publicKey.toBase58()) : "",
+      const provider = new AnchorProvider(connection, wallet, { commitment: "confirmed" });
+      
+      const prizeLamports = Math.floor(prize * LAMPORTS_PER_SOL);
+      const positionPriceLamports = Math.floor(ticketPrice * LAMPORTS_PER_SOL);
+      const durationSeconds = form.durationHours * 3600;
+
+      const { campaignPDA, campaignIndex } = await createCampaignOnChain(provider, {
+        prizeLamports,
+        positionPriceLamports,
+        tokensPerPosition: ticketPrice * 1000000, // Example multiplier
+        durationSeconds,
+        title: form.title,
+        description: form.description
       });
+
       toast("Campaign created! Deposit prize to activate.", "success");
-      navigate(`/campaign/${campaign.id}`);
+      navigate(`/campaign/${campaignPDA.toBase58()}`);
     } catch(e) {
-      toast("Error: " + e.message, "error");
+      toast("Error: " + (e.message || "Failed to create campaign"), "error");
+      console.error(e);
     } finally { setLoading(false); }
   }
 
@@ -214,7 +243,7 @@ export default function CreateCampaignPage() {
       <div style={{ marginTop:"18px", padding:"14px 16px", background:"rgba(56,189,248,.05)", border:"1px solid rgba(56,189,248,.15)", borderRadius:"var(--r)", fontSize:".82rem", color:"var(--text2)", lineHeight:1.65 }}>
         <strong style={{ color:"var(--accent)" }}>Next step:</strong> After launching, go to your campaign page and deposit {prize} SOL to activate it. The 100 positions will immediately go on sale.
       </div>
-      {!connected && (
+       {!wallet && (
         <div style={{ marginTop:"14px", padding:"13px", background:"rgba(251,191,36,.08)", border:"1px solid rgba(251,191,36,.2)", borderRadius:"var(--r)", fontSize:".84rem", color:"var(--warning)" }}>
           ⚠️ Connect your wallet to launch the campaign
         </div>

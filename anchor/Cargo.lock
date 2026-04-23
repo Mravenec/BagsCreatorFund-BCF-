@@ -321,6 +321,7 @@ dependencies = [
  "anchor-lang",
  "blake3",
  "block-buffer 0.10.4",
+ "bytemuck",
  "digest 0.10.7",
 ]
 

@@ -131,6 +131,11 @@ export type BagsCreatorFund = {
           "isSigner": false
         },
         {
+          "name": "projectCreator",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
           "name": "buyer",
           "isMut": true,
           "isSigner": true
@@ -168,7 +173,7 @@ export type BagsCreatorFund = {
         },
         {
           "name": "authority",
-          "isMut": false,
+          "isMut": true,
           "isSigner": true,
           "docs": [
             "Campaign creator authorizes this after verifying CEX payment off-chain"
@@ -190,7 +195,7 @@ export type BagsCreatorFund = {
       "name": "resolveCampaign",
       "docs": [
         "Resolve the campaign: derive winning position from Solana slot hash (deterministic, public)",
-        "Formula: winning_position = u64::from_le_bytes(slot_hash[0..8]) % 20"
+        "Formula: winning_position = u64::from_le_bytes(slot_hash[0..8]) % 100"
       ],
       "accounts": [
         {
@@ -244,6 +249,11 @@ export type BagsCreatorFund = {
         {
           "name": "project",
           "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "projectCreator",
+          "isMut": false,
           "isSigner": false
         },
         {
@@ -373,6 +383,15 @@ export type BagsCreatorFund = {
             "type": "u8"
           },
           {
+            "name": "pad0",
+            "type": {
+              "array": [
+                "u8",
+                6
+              ]
+            }
+          },
+          {
             "name": "totalCollected",
             "type": "u64"
           },
@@ -386,7 +405,16 @@ export type BagsCreatorFund = {
           },
           {
             "name": "hasWinner",
-            "type": "bool"
+            "type": "u8"
+          },
+          {
+            "name": "pad1",
+            "type": {
+              "array": [
+                "u8",
+                6
+              ]
+            }
           },
           {
             "name": "winner",
@@ -405,23 +433,57 @@ export type BagsCreatorFund = {
             "type": "u8"
           },
           {
+            "name": "reserved",
+            "type": {
+              "array": [
+                "u8",
+                7
+              ]
+            }
+          },
+          {
             "name": "positions",
             "type": {
               "array": [
                 {
-                  "defined": "PositionInfo"
+                  "array": [
+                    {
+                      "defined": "PositionInfo"
+                    },
+                    10
+                  ]
                 },
-                20
+                10
               ]
             }
           },
           {
             "name": "title",
-            "type": "string"
+            "type": {
+              "array": [
+                {
+                  "array": [
+                    "u8",
+                    8
+                  ]
+                },
+                13
+              ]
+            }
           },
           {
             "name": "description",
-            "type": "string"
+            "type": {
+              "array": [
+                {
+                  "array": [
+                    "u8",
+                    32
+                  ]
+                },
+                16
+              ]
+            }
           }
         ]
       }
@@ -438,7 +500,16 @@ export type BagsCreatorFund = {
         "fields": [
           {
             "name": "filled",
-            "type": "bool"
+            "type": "u8"
+          },
+          {
+            "name": "pad",
+            "type": {
+              "array": [
+                "u8",
+                7
+              ]
+            }
           },
           {
             "name": "owner",
@@ -797,6 +868,11 @@ export const IDL: BagsCreatorFund = {
           "isSigner": false
         },
         {
+          "name": "projectCreator",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
           "name": "buyer",
           "isMut": true,
           "isSigner": true
@@ -834,7 +910,7 @@ export const IDL: BagsCreatorFund = {
         },
         {
           "name": "authority",
-          "isMut": false,
+          "isMut": true,
           "isSigner": true,
           "docs": [
             "Campaign creator authorizes this after verifying CEX payment off-chain"
@@ -856,7 +932,7 @@ export const IDL: BagsCreatorFund = {
       "name": "resolveCampaign",
       "docs": [
         "Resolve the campaign: derive winning position from Solana slot hash (deterministic, public)",
-        "Formula: winning_position = u64::from_le_bytes(slot_hash[0..8]) % 20"
+        "Formula: winning_position = u64::from_le_bytes(slot_hash[0..8]) % 100"
       ],
       "accounts": [
         {
@@ -910,6 +986,11 @@ export const IDL: BagsCreatorFund = {
         {
           "name": "project",
           "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "projectCreator",
+          "isMut": false,
           "isSigner": false
         },
         {
@@ -1039,6 +1120,15 @@ export const IDL: BagsCreatorFund = {
             "type": "u8"
           },
           {
+            "name": "pad0",
+            "type": {
+              "array": [
+                "u8",
+                6
+              ]
+            }
+          },
+          {
             "name": "totalCollected",
             "type": "u64"
           },
@@ -1052,7 +1142,16 @@ export const IDL: BagsCreatorFund = {
           },
           {
             "name": "hasWinner",
-            "type": "bool"
+            "type": "u8"
+          },
+          {
+            "name": "pad1",
+            "type": {
+              "array": [
+                "u8",
+                6
+              ]
+            }
           },
           {
             "name": "winner",
@@ -1071,23 +1170,57 @@ export const IDL: BagsCreatorFund = {
             "type": "u8"
           },
           {
+            "name": "reserved",
+            "type": {
+              "array": [
+                "u8",
+                7
+              ]
+            }
+          },
+          {
             "name": "positions",
             "type": {
               "array": [
                 {
-                  "defined": "PositionInfo"
+                  "array": [
+                    {
+                      "defined": "PositionInfo"
+                    },
+                    10
+                  ]
                 },
-                20
+                10
               ]
             }
           },
           {
             "name": "title",
-            "type": "string"
+            "type": {
+              "array": [
+                {
+                  "array": [
+                    "u8",
+                    8
+                  ]
+                },
+                13
+              ]
+            }
           },
           {
             "name": "description",
-            "type": "string"
+            "type": {
+              "array": [
+                {
+                  "array": [
+                    "u8",
+                    32
+                  ]
+                },
+                16
+              ]
+            }
           }
         ]
       }
@@ -1104,7 +1237,16 @@ export const IDL: BagsCreatorFund = {
         "fields": [
           {
             "name": "filled",
-            "type": "bool"
+            "type": "u8"
+          },
+          {
+            "name": "pad",
+            "type": {
+              "array": [
+                "u8",
+                7
+              ]
+            }
           },
           {
             "name": "owner",

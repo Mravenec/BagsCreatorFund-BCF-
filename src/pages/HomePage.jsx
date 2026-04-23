@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import { getCampaigns, getActiveCampaigns, totalPot } from "../lib/store.js";
+import { fetchAllCampaigns, totalPot } from "../lib/programClient.js";
+import { useConnection } from "@solana/wallet-adapter-react";
 import { pingBags } from "../lib/bags.js";
 import { toUSDC } from "../lib/constants.js";
 import CampaignCard from "../components/CampaignCard.jsx";
@@ -10,14 +11,22 @@ export default function HomePage() {
   const [stats,  setStats]  = useState({ campaigns: 0, active: 0, pot: 0 });
   const [apiOk,  setApiOk]  = useState(null);
 
+  const { connection } = useConnection();
+  const [loading, setLoading] = useState(true);
+
   useEffect(() => {
-    const all = getCampaigns();
-    const act = getActiveCampaigns();
-    const pot = all.reduce((s, c) => s + totalPot(c), 0);
-    setActive(act.slice(0, 6));
-    setStats({ campaigns: all.length, active: act.length, pot });
-    pingBags().then(setApiOk);
-  }, []);
+    async function load() {
+      setLoading(true);
+      const all = await fetchAllCampaigns(connection);
+      const act = all.filter(c => c.status === "active");
+      const pot = all.reduce((s, c) => s + totalPot(c), 0);
+      setActive(act.slice(0, 6));
+      setStats({ campaigns: all.length, active: act.length, pot });
+      pingBags().then(setApiOk);
+      setLoading(false);
+    }
+    load();
+  }, [connection]);
 
   return (
     <div>

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { getCampaigns } from "../lib/store.js";
+import { fetchAllCampaigns } from "../lib/programClient.js";
+import { useConnection } from "@solana/wallet-adapter-react";
 import { CATEGORIES } from "../lib/constants.js";
 import CampaignCard from "../components/CampaignCard.jsx";
 
@@ -14,7 +15,18 @@ export default function ExplorePage() {
   const [category, setCategory] = useState("all");
   const [search,   setSearch]   = useState("");
 
-  useEffect(() => setAll(getCampaigns()), []);
+  const { connection } = useConnection();
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      setLoading(true);
+      const data = await fetchAllCampaigns(connection);
+      setAll(data);
+      setLoading(false);
+    }
+    load();
+  }, [connection]);
 
   const filtered = all.filter(c => {
     if (status !== "all" && c.status !== status) return false;
@@ -45,7 +57,9 @@ export default function ExplorePage() {
         </select>
       </div>
 
-      {filtered.length===0 ? (
+      {loading ? (
+        <div style={{ textAlign:"center", padding:"70px 24px" }}><span className="spin">⟳</span> Loading on-chain campaigns...</div>
+      ) : filtered.length===0 ? (
         <div style={{ textAlign:"center", padding:"70px 24px", border:"1px dashed var(--border2)", borderRadius:"var(--rl)" }}>
           <div style={{ fontSize:"2rem", marginBottom:"10px" }}>🔍</div>
           <h3 style={{ fontWeight:700, marginBottom:"6px" }}>No campaigns found</h3>

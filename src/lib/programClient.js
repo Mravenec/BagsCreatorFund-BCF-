@@ -1,35 +1,59 @@
 /**
  * programClient.js — BagsCreatorFund on-chain client
- *
- * This module wraps all Anchor program calls.
- * It REPLACES localStorage for all on-chain state.
- * localStorage is only used as a cache/display layer.
- *
- * Program ID: BCFunD11111111111111111111111111111111111111
- * Network: Solana DevNet
  */
+console.log(">>> [BCF] programClient.js cargado correctamente <<<");
 
-import { Program, AnchorProvider, BN, utils, web3 } from '@coral-xyz/anchor';
+import { Buffer } from 'buffer';
+import process from 'process';
+
+if (typeof window !== 'undefined') {
+  window.Buffer = Buffer;
+  window.process = process;
+}
+if (typeof globalThis !== 'undefined') {
+  globalThis.Buffer = Buffer;
+  globalThis.process = process;
+}
+
+import { Program, AnchorProvider, BN } from '@coral-xyz/anchor';
 import { PublicKey, SystemProgram, LAMPORTS_PER_SOL, SYSVAR_SLOT_HASHES_PUBKEY } from '@solana/web3.js';
 import IDL from './idl.json';
+
+// Polyfill Buffer for Anchor compatibility
+if (typeof window !== 'undefined' && !window.Buffer) {
+  window.Buffer = Buffer;
+}
+
+const decodeString = (bytes) => {
+  if (!bytes) return '';
+  // Flatten 2D array if needed
+  const flatBytes = Array.isArray(bytes[0]) ? bytes.flat() : bytes;
+  const text = new TextDecoder().decode(new Uint8Array(flatBytes));
+  return text.replace(/\0/g, '').trim();
+};
 
 // ─── Program ID ────────────────────────────────────────────────────────────────
 // IMPORTANT: Replace this after running `anchor deploy` in the anchor/ directory
 export const PROGRAM_ID = new PublicKey('Rx1XswVLMPFAw48m2hVbKeM3eJYkZWNLe1ER5QzLg3L');
 
 // ─── PDA Derivation ────────────────────────────────────────────────────────────
-export function getProjectPDA(creatorPubkey) {
+export function getProjectPDA(creator) {
+  if (!creator) throw new Error("getProjectPDA: creator is required");
+  const creatorPub = typeof creator === 'string' ? new PublicKey(creator) : creator;
   return PublicKey.findProgramAddressSync(
-    [Buffer.from('project'), creatorPubkey.toBuffer()],
+    [Buffer.from('project'), creatorPub.toBuffer()],
     PROGRAM_ID
   );
 }
 
-export function getCampaignPDA(creatorPubkey, campaignIndex) {
-  const indexBuf = Buffer.alloc(8);
-  indexBuf.writeBigUInt64LE(BigInt(campaignIndex));
+export function getCampaignPDA(creatorPubkey, index) {
+  if (!creatorPubkey) throw new Error("getCampaignPDA: creatorPubkey is required");
   return PublicKey.findProgramAddressSync(
-    [Buffer.from('campaign'), creatorPubkey.toBuffer(), indexBuf],
+    [
+      Buffer.from('campaign'),
+      creatorPubkey.toBuffer(),
+      new BN(index).toArrayLike(Buffer, 'le', 8)
+    ],
     PROGRAM_ID
   );
 }
@@ -46,29 +70,60 @@ export function getProgram(provider) {
  * Idempotent: if project already exists, returns its data.
  */
 export async function initializeProject(provider, { tokenMint, feeModeName }) {
-  const program = getProgram(provider);
-  const creator = provider.wallet.publicKey;
-  const [projectPDA] = getProjectPDA(creator);
-
-  // Check if already initialized
   try {
-    const existing = await program.account.projectAccount.fetch(projectPDA);
-    return { projectPDA, account: existing, isNew: false };
-  } catch {
-    // Not initialized — create it
+    console.log("[BCF] initializeProject START");
+    console.log("[BCF] Token mint:", tokenMint);
+    console.log("[BCF] Fee mode:", feeModeName);
+    
+    const program = getProgram(provider);
+    console.log("[BCF] Program obtained successfully");
+    
+    const creator = provider.wallet?.publicKey;
+    if (!creator) {
+      throw new Error("Wallet not connected: provider.wallet.publicKey is undefined");
+    }
+    
+    const [projectPDA] = getProjectPDA(creator);
+    console.log("[BCF] Project PDA:", projectPDA.toBase58());
+
+    // Check if already initialized
+    try {
+      console.log("[BCF] Checking if project already exists...");
+      const existing = await program.account.projectAccount.fetch(projectPDA);
+      console.log("[BCF] Project already exists, returning existing");
+      return { projectPDA, account: existing, isNew: false };
+    } catch (fetchErr) {
+      console.log("[BCF] Project not initialized, creating new one:", fetchErr.message || fetchErr);
+      // Not initialized — create it
+    }
+
+  console.log("[BCF] Creating initializeProject transaction...");
+    // Defensive check for tokenMint
+    let mintPub;
+    try {
+      mintPub = new PublicKey(tokenMint);
+    } catch (e) {
+      console.warn("[BCF] Invalid tokenMint provided, using fallback:", tokenMint);
+      mintPub = new PublicKey("11111111111111111111111111111111");
+    }
+
+    const tx = await program.methods
+      .initializeProject(mintPub, feeModeName)
+      .accounts({
+        project:       projectPDA,
+        creator:       creator,
+        systemProgram: SystemProgram.programId,
+      })
+      .rpc({ commitment: 'confirmed' });
+    
+    console.log("[BCF] Transaction successful:", tx);
+    return { projectPDA, tx, isNew: true };
+    
+  } catch (error) {
+    console.error("[BCF] initializeProject CRITICAL ERROR:", error.message || error);
+    if (error.stack) console.error("[BCF] Stack Trace:", error.stack);
+    throw error;
   }
-
-  const tx = await program.methods
-    .initializeProject(new PublicKey(tokenMint), feeModeName)
-    .accounts({
-      project:       projectPDA,
-      creator:       creator,
-      systemProgram: SystemProgram.programId,
-    })
-    .rpc({ commitment: 'confirmed' });
-
-  const account = await program.account.projectAccount.fetch(projectPDA);
-  return { projectPDA, account, tx, isNew: true };
 }
 
 /**
@@ -266,12 +321,15 @@ export async function withdrawTreasuryOnChain(provider, { amountLamports }) {
 // ─── Read helpers ──────────────────────────────────────────────────────────────
 
 export async function fetchProject(provider, creatorPubkey) {
-  const program = getProgram(provider);
-  const [projectPDA] = getProjectPDA(new PublicKey(creatorPubkey));
+  if (!provider || !creatorPubkey) return null;
   try {
+    const program = getProgram(provider);
+    const [projectPDA] = getProjectPDA(creatorPubkey);
+    console.log("[BCF] fetchProject at:", projectPDA.toBase58());
     const account = await program.account.projectAccount.fetch(projectPDA);
     return { pda: projectPDA.toBase58(), ...account };
-  } catch {
+  } catch (e) {
+    console.warn("[BCF] No project found for:", creatorPubkey);
     return null;
   }
 }
@@ -279,44 +337,64 @@ export async function fetchProject(provider, creatorPubkey) {
 export async function fetchCampaign(provider, campaignPDA) {
   const program = getProgram(provider);
   try {
+    console.log("[BCF] Fetching campaign at PDA:", campaignPDA);
     const account = await program.account.campaignAccount.fetch(new PublicKey(campaignPDA));
     return { pda: campaignPDA, ...account };
-  } catch {
+  } catch (e) {
+    console.error("[BCF] Error fetching campaign:", campaignPDA, e.message || e);
     return null;
   }
 }
 
 /** Fetch all campaigns for a creator by iterating their campaign count */
 export async function fetchCreatorCampaigns(provider, creatorPubkey) {
-  const project = await fetchProject(provider, creatorPubkey);
-  if (!project) return [];
+  if (!provider || !creatorPubkey) return [];
+  try {
+    console.log("[BCF] fetchCreatorCampaigns START for:", creatorPubkey);
+    const project = await fetchProject(provider, creatorPubkey);
+    if (!project) return [];
 
-  const campaigns = [];
-  const count = project.campaignCount.toNumber();
+    const campaigns = [];
+    const count = Number(project.campaignCount);
+    console.log(`[BCF] Creator has ${count} campaigns`);
 
-  for (let i = 0; i < count; i++) {
-    const [pda] = getCampaignPDA(new PublicKey(creatorPubkey), i);
-    const campaign = await fetchCampaign(provider, pda.toBase58());
-    if (campaign) campaigns.push({ ...campaign, pda: pda.toBase58() });
+    for (let i = 0; i < count; i++) {
+      try {
+        const [pda] = getCampaignPDA(creatorPubkey, i);
+        const campaign = await fetchCampaign(provider, pda.toBase58());
+        if (campaign) campaigns.push({ ...campaign, pda: pda.toBase58() });
+      } catch (inner) {
+        console.warn(`[BCF] Error fetching campaign index ${i}:`, inner.message);
+      }
+    }
+    return campaigns;
+  } catch (e) {
+    console.error("[BCF] fetchCreatorCampaigns CRITICAL ERROR:", e.message || e);
+    return [];
   }
-  return campaigns;
 }
 
-/** Fetch all active campaigns (uses getProgramAccounts — may be slow on DevNet) */
-export async function fetchAllActiveCampaigns(connection) {
+/** Fetch ALL campaigns (uses getProgramAccounts) */
+export async function fetchAllCampaigns(connection) {
+  console.log("[BCF] fetchAllCampaigns START");
   try {
+    if (!connection) {
+      console.error("[BCF] No connection provided to fetchAllCampaigns");
+      return [];
+    }
+    console.log("[BCF] Connection endpoint:", connection.rpcEndpoint);
+    console.log("[BCF] Program ID:", PROGRAM_ID?.toBase58 ? PROGRAM_ID.toBase58() : "INVALID_TYPE");
+    
     const program = new Program(IDL, PROGRAM_ID, { connection });
-    const accounts = await program.account.campaignAccount.all([
-      {
-        memcmp: {
-          offset: 8 + 32 + 32 + 32 + 8 + 8 + 8 + 8 + 8 + 8, // offset to status field
-          bytes:  utils.bytes.bs58.encode(Buffer.from([1]))   // status = 1 (active)
-        }
-      }
-    ]);
-    return accounts.map(a => ({ pda: a.publicKey.toBase58(), ...a.account }));
+    console.log("[BCF] Anchor Program initialized successfully");
+    
+    const accounts = await program.account.campaignAccount.all();
+    console.log(`[BCF] Found ${accounts.length} campaigns on-chain`);
+    
+    return accounts.map(a => campaignAccountToDisplay(a.publicKey.toBase58(), a.account));
   } catch (e) {
-    console.warn('[fetchAllActiveCampaigns]', e.message);
+    console.error('[BCF] fetchAllCampaigns CRITICAL ERROR:', e.message || e);
+    if (e.stack) console.error("[BCF] Stack Trace:", e.stack);
     return [];
   }
 }
@@ -324,14 +402,15 @@ export async function fetchAllActiveCampaigns(connection) {
 // ─── Conversion helpers ────────────────────────────────────────────────────────
 /** Convert on-chain CampaignAccount to the display format used by UI components */
 export function campaignAccountToDisplay(pda, account, tokenInfo = null) {
-  const positions = (account.positions || []).map((p, i) => ({
+  const flatPositions = (account.positions || []).flat();
+  const positions = flatPositions.map((p, i) => ({
     index:         i,
-    owner:         p.filled ? p.owner.toBase58() : null,
+    owner:         p.filled === 1 ? p.owner.toBase58() : null,
     txSignature:   null,
     source:        'wallet',
     memo:          null,
     tokensReceived: account.tokensPerPosition?.toNumber() || 0,
-    filled:        p.filled,
+    filled:        p.filled === 1,
     purchasedAt:   null,
   }));
 
@@ -349,8 +428,8 @@ export function campaignAccountToDisplay(pda, account, tokenInfo = null) {
     tokenSymbol:       tokenInfo?.symbol || '???',
     tokenName:         tokenInfo?.name   || 'Unknown',
     creatorWallet:     account.creator?.toBase58() || '',
-    title:             account.title || '',
-    description:       account.description || '',
+    title:             decodeString(account.title),
+    description:       decodeString(account.description),
     prizeSOL,
     positionPriceSOL,
     tokensPerPosition: account.tokensPerPosition?.toNumber() || 0,
@@ -362,10 +441,28 @@ export function campaignAccountToDisplay(pda, account, tokenInfo = null) {
     treasuryContribution: (account.treasuryContribution?.toNumber() || 0) / LAMPORTS_PER_SOL,
     winningPosition:   winning,
     winningBlockHash:  account.winningSlot?.toString() || null,
-    hasWinner:         account.hasWinner || false,
-    winnerWallet:      account.hasWinner ? account.winner?.toBase58() : null,
+    hasWinner:         account.hasWinner === 1,
+    winnerWallet:      account.hasWinner === 1 ? account.winner?.toBase58() : null,
     totalPayout:       prizeSOL + totalCollectedSOL,
     createdAt:         account.createdAt?.toNumber() * 1000 || Date.now(),
     campaignIndex:     account.campaignIndex?.toNumber() || 0,
   };
+}
+
+// ─── Utility helpers (migrated from store.js) ──────────────────────────────────
+export const fmtPos    = (i)  => String(i).padStart(2, '0');
+export const posStatus = (c)  => (c.positions || []).filter(p => p.filled || p.owner).length;
+export const totalPot  = (c)  => (c.prizeSOL || 0) + (c.totalCollectedSOL || 0);
+export const isExpired = (c)  => c.deadline && Date.now() > c.deadline;
+
+export function timeLeft(deadline) {
+  if (!deadline) return '—';
+  const d = deadline - Date.now();
+  if (d <= 0) return 'Ended';
+  const h = Math.floor(d / 3600000);
+  const m = Math.floor((d % 3600000) / 60000);
+  const s = Math.floor((d % 60000)   / 1000);
+  if (h > 0)   return `${h}h ${m}m`;
+  if (m > 0)   return `${m}m ${s}s`;
+  return `${s}s`;
 }

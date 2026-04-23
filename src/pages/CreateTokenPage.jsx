@@ -1,8 +1,10 @@
 import React, { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { useWallet } from "@solana/wallet-adapter-react";
+import { useWallet, useConnection, useAnchorWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
-import { createToken, getCreatorTokens } from "../lib/store.js";
+import { initializeProject } from "../lib/programClient.js";
+import { AnchorProvider } from "@coral-xyz/anchor";
+import { PublicKey } from "@solana/web3.js";
 import { createBagsTokenInfo } from "../lib/bags.js";
 import { FEE_MODES, CATEGORIES } from "../lib/constants.js";
 import { useToast } from "../components/Toast.jsx";
@@ -10,7 +12,8 @@ import { useToast } from "../components/Toast.jsx";
 const STEPS = ["Token Identity", "Fee Structure", "Review & Create"];
 
 export default function CreateTokenPage() {
-  const { connected, publicKey } = useWallet();
+  const { connection } = useConnection();
+  const wallet = useAnchorWallet();
   const { setVisible } = useWalletModal();
   const navigate = useNavigate();
   const toast = useToast();
@@ -24,8 +27,9 @@ export default function CreateTokenPage() {
     feeModeId: "fa29606e-5e48-4c37-827f-4b03d58ee23d",
   });
 
+  console.log("[BCF] CreateTokenPage render. FEE_MODES:", FEE_MODES);
   const set = (k, v) => { setForm(f => ({...f, [k]:v})); setErrors(e => ({...e, [k]:""})); };
-  const feeMode = FEE_MODES.find(m => m.id === form.feeModeId);
+  const feeMode = (FEE_MODES || []).find(m => m.id === form?.feeModeId);
 
   function validate(s) {
     const e = {};
@@ -41,7 +45,11 @@ export default function CreateTokenPage() {
   }
 
   async function handleCreate() {
-    if (!connected) { setVisible(true); return; }
+    if (!wallet) {
+      toast("Please connect your wallet to create a project", "error");
+      setVisible(true);
+      return;
+    }
     setLoading(true);
     try {
       let mint = null, metadataUri = "";
@@ -60,19 +68,19 @@ export default function CreateTokenPage() {
         toast("Token queued (DevNet mode)", "info");
       }
 
-      const token = createToken({
-        name: form.name, symbol: form.symbol.toUpperCase(),
-        description: form.description, purpose: form.purpose,
-        imageUrl: form.imageUrl,
-        feeModeId: form.feeModeId, feeModeName: feeMode?.name || "Standard",
-        creatorWallet: publicKey.toBase58(),
-        mint, metadataUri,
+      const provider = new AnchorProvider(connection, wallet, { commitment: "confirmed" });
+      
+      toast("Initializing project on-chain...", "info");
+      const { projectPDA, account, tx } = await initializeProject(provider, {
+        tokenMint: mint || "11111111111111111111111111111112", // System Program fallback
+        feeModeName: feeMode?.name || "Standard 2%",
       });
 
-      toast(`Token $${token.symbol} created!`, "success");
-      navigate(`/create-campaign?token=${token.mint}`);
+      toast(`Project initialized on Solana!`, "success");
+      navigate(`/create-campaign?token=${mint || "11111111111111111111111111111112"}`);
     } catch (e) {
-      toast("Error: " + e.message, "error");
+      toast("Error: " + (e.message || "On-chain initialization failed"), "error");
+      console.error(e);
     } finally { setLoading(false); }
   }
 
@@ -158,7 +166,7 @@ export default function CreateTokenPage() {
       <div style={{ marginTop:"18px", padding:"14px 16px", background:"rgba(56,189,248,.05)", border:"1px solid rgba(56,189,248,.15)", borderRadius:"var(--r)", fontSize:".82rem", color:"var(--text2)", lineHeight:1.65 }}>
         <strong style={{ color:"var(--accent)" }}>After creating:</strong> You will be taken to create a funding campaign linked to this token. You can create multiple campaigns with the same token over time.
       </div>
-      {!connected && (
+      {!wallet && (
         <div style={{ marginTop:"14px", padding:"13px 15px", background:"rgba(251,191,36,.08)", border:"1px solid rgba(251,191,36,.2)", borderRadius:"var(--r)", fontSize:".84rem", color:"var(--warning)" }}>
           ⚠️ Connect your wallet to create the token
         </div>

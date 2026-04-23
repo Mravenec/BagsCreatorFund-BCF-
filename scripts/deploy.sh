@@ -218,6 +218,9 @@ if [ "$NEEDS_AIRDROP" = "yes" ]; then
   solana airdrop 2 && sleep 2
 fi
 echo -e "${GREEN}✓ Balance: $(solana balance 2>/dev/null)${NC}"
+echo ""
+
+echo -e "${GREEN}✓ Balance: $(solana balance 2>/dev/null)${NC}"
 
 echo ""
 echo -e "${YELLOW}[4/6] Building Anchor program...${NC}"
@@ -320,12 +323,33 @@ echo -e "${GREEN}✓ All files patched and rebuilt${NC}"
 
 echo ""
 echo -e "${YELLOW}[6/6] Deploying to Solana DevNet...${NC}"
-# Use solana program deploy for better control and retries
-solana program deploy \
-  --program-id "$PROGRAM_ID" \
-  --keypair "$HOME/.config/solana/id.json" \
-  --commitment confirmed \
-  "target/deploy/bags_creator_fund.so"
+echo "  Deploying with priority fees to bypass congestion..."
+# Use priority fees and multiple attempts
+MAX_RETRIES=5
+for i in $(seq 1 $MAX_RETRIES); do
+  echo "  Attempt $i of $MAX_RETRIES..."
+  
+  # Ensure we have a clean slate for each attempt (recovers SOL from failed attempts)
+  solana program close --buffers --quiet 2>/dev/null || true
+  
+  if solana program deploy \
+    --program-id "$PROGRAM_ID" \
+    --keypair "$HOME/.config/solana/id.json" \
+    --commitment confirmed \
+    --with-compute-unit-price 50000 \
+    "target/deploy/bags_creator_fund.so"; then
+    echo -e "${GREEN}✓ Deployment successful!${NC}"
+    break
+  else
+    if [ $i -eq $MAX_RETRIES ]; then
+      echo -e "${RED}✗ Deployment failed after $MAX_RETRIES attempts.${NC}"
+      echo -e "${YELLOW}Tip: You can manually resume with: solana program deploy --buffer <BUFFER> --program-id $PROGRAM_ID${NC}"
+      exit 1
+    fi
+    echo -e "${YELLOW}  Deployment interrupted (congested). Retrying in 5s...${NC}"
+    sleep 5
+  fi
+done
 
 echo ""
 echo -e "${GREEN}╔══════════════════════════════════════════════════════════════╗${NC}"

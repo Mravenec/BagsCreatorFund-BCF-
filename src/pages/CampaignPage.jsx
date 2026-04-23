@@ -4,10 +4,11 @@ import { useWallet, useConnection } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { Transaction, SystemProgram, PublicKey, LAMPORTS_PER_SOL } from "@solana/web3.js";
 import {
-  getCampaign, getToken, activateCampaign, purchasePosition,
-  settleCampaign, posStatus, totalPot, timeLeft, isExpired,
-  fmtPos,
-} from "../lib/store.js";
+  fetchCampaign, fundCampaignOnChain, buyPositionOnChain,
+  resolveCampaignOnChain, campaignAccountToDisplay, getProgram,
+  fmtPos, posStatus, totalPot, timeLeft, isExpired,
+} from "../lib/programClient.js";
+import { AnchorProvider } from "@coral-xyz/anchor";
 import { toUSDC, TOKENS_PER_SOL, TREASURY_FEE_PCT } from "../lib/constants.js";
 import { shortAddr, explorerTx, getSOLBalance, requestAirdrop } from "../lib/solana.js";
 import { bagsTokenUrl } from "../lib/bags.js";
@@ -106,16 +107,13 @@ function DepositModal({ campaign, connection, onClose, onActivated }) {
     }
     setSending(true);
     try {
-      const tx = new Transaction();
-      tx.add(SystemProgram.transfer({ fromPubkey:publicKey, toPubkey:new PublicKey(campaign.creatorWallet), lamports }));
-      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
-      tx.recentBlockhash = blockhash; tx.feePayer = publicKey;
+      const provider = new AnchorProvider(connection, wallet, { commitment: "confirmed" });
       toast("Approve the prize deposit in your wallet...", "info");
-      const sig = await sendTransaction(tx, connection, { skipPreflight:false, preflightCommitment:"confirmed" });
-      toast("Confirming on-chain...", "info");
-      const result = await connection.confirmTransaction({ signature:sig, blockhash, lastValidBlockHeight }, "confirmed");
-      if (result.value.err) throw new Error("On-chain error");
-      activate(sig);
+      const { tx, account } = await fundCampaignOnChain(provider, { campaignPDA: campaign.pda });
+      
+      toast("Campaign activated!", "success");
+      onActivated(campaignAccountToDisplay(campaign.pda, account));
+      setTimeout(onClose, 1800);
     } catch(e) {
       const m = e.message||"";
       if (/rejected|cancelled|canceled/i.test(m)) toast("Deposit cancelled", "info");
@@ -261,26 +259,29 @@ function ParticipateModal({ campaign, positionIndex, connection, onClose, onSucc
 
   async function handleWalletBuy() {
     if (!connected) { setVisible(true); return; }
-    const fresh = getCampaign(campaign.id);
-    if (!fresh || fresh.positions[positionIndex].owner) {
-      toast(`Position #${fmtPos(positionIndex)} was just taken`, "error");
+    
+    // Refresh state first
+    const provider = new AnchorProvider(connection, wallet, { commitment: "confirmed" });
+    const freshAccount = await fetchCampaign(provider, campaign.pda);
+    if (!freshAccount || freshAccount.positions[positionIndex].filled) {
+      toast(`Position #${positionIndex < 10 ? '0' + positionIndex : positionIndex} was just taken`, "error");
       onClose(); return;
     }
+
     if (balance !== null && balance < price) {
       toast(`Need ${price} SOL — balance: ${balance.toFixed(4)} SOL`, "error"); return;
     }
     setSending(true);
     try {
-      const tx = new Transaction();
-      tx.add(SystemProgram.transfer({ fromPubkey:publicKey, toPubkey:new PublicKey(campaign.creatorWallet), lamports }));
-      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
-      tx.recentBlockhash = blockhash; tx.feePayer = publicKey;
       toast("Approve in your wallet...", "info");
-      const sig = await sendTransaction(tx, connection, { skipPreflight:false, preflightCommitment:"confirmed" });
-      toast("Confirming...", "info");
-      const result = await connection.confirmTransaction({ signature:sig, blockhash, lastValidBlockHeight }, "confirmed");
-      if (result.value.err) throw new Error("On-chain error");
-      complete(sig, publicKey.toBase58(), "wallet");
+      const { tx, account } = await buyPositionOnChain(provider, { 
+        campaignPDA: campaign.pda, 
+        positionIndex 
+      });
+      
+      setDone(true); setDoneTx(tx);
+      onSuccess(campaignAccountToDisplay(campaign.pda, account));
+      toast(`✓ Position secured!`, "success");
     } catch(e) {
       const m = e.message||"";
       if (/rejected|cancelled|canceled/i.test(m)) toast("Cancelled", "info");
@@ -406,7 +407,8 @@ function ParticipateModal({ campaign, positionIndex, connection, onClose, onSucc
 // ─── MAIN PAGE ────────────────────────────────────────────────────────────────
 export default function CampaignPage() {
   const { id }                             = useParams();
-  const { connected, publicKey }           = useWallet();
+  const wallet                             = useWallet();
+  const { connected, publicKey }           = wallet;
   const { connection }                     = useConnection();
   const { setVisible }                     = useWalletModal();
   const navigate                           = useNavigate();
@@ -425,11 +427,16 @@ export default function CampaignPage() {
   useEffect(() => { const t = setInterval(()=>tick(n=>n+1), 1000); return ()=>clearInterval(t); }, []);
 
   useEffect(() => {
-    const c = getCampaign(id);
-    if (!c) { navigate("/explore"); return; }
-    setCampaign(c);
-    if (c.tokenMint) setToken(getToken(c.tokenMint));
-  }, [id]);
+    async function load() {
+      // Mock provider for read-only
+      const mockWallet = { publicKey: new PublicKey("11111111111111111111111111111111") };
+      const provider = new AnchorProvider(connection, mockWallet, { commitment: "confirmed" });
+      const account = await fetchCampaign(provider, id);
+      if (!account) { navigate("/explore"); return; }
+      setCampaign(campaignAccountToDisplay(id, account));
+    }
+    load();
+  }, [id, connection]);
 
   useEffect(() => {
     if (connected && publicKey) getSOLBalance(publicKey.toBase58()).then(setBalance);
@@ -456,24 +463,20 @@ export default function CampaignPage() {
   }
 
   async function handleSettle() {
+    if (!connected) { setVisible(true); return; }
     setSettling(true);
-    toast("Fetching block hash for verifiable draw...", "info");
+    toast("Finalizing draw on-chain...", "info");
     try {
-      let hashStr;
-      try {
-        const slot = await connection.getSlot("finalized");
-        const block = await connection.getBlock(slot, { commitment:"finalized", maxSupportedTransactionVersion:0, transactionDetails:"none" });
-        hashStr = block?.blockhash || `fallback_${slot}_${Date.now()}`;
-      } catch {
-        hashStr = `devnet_${Date.now().toString(16)}_${campaign.id.slice(-6)}`;
-      }
-      const updated = settleCampaign(campaign.id, hashStr);
+      const provider = new AnchorProvider(connection, wallet, { commitment: "confirmed" });
+      const { tx, account } = await resolveCampaignOnChain(provider, { campaignPDA: campaign.pda });
+      
+      const updated = campaignAccountToDisplay(campaign.pda, account);
       setCampaign(updated);
-      if (updated.tokenMint) setToken(getToken(updated.tokenMint));
+      
       if (updated.winnerWallet) {
-        toast(`🏆 Winner: Position #${fmtPos(updated.winningPosition)} → ${shortAddr(updated.winnerWallet)} wins ${pot.toFixed(3)} SOL!`, "success", 10000);
+        toast(`🏆 Winner: Position #${updated.winningPosition < 10 ? '0' + updated.winningPosition : updated.winningPosition} wins!`, "success", 10000);
       } else {
-        toast(`🎲 Position #${fmtPos(updated.winningPosition)} was not taken — ${pot.toFixed(3)} SOL goes to project treasury.`, "info", 9000);
+        toast(`🎲 No winner — SOL remains in project treasury.`, "info", 9000);
       }
     } catch(e) {
       toast("Settlement error: " + e.message, "error");

@@ -15,6 +15,8 @@
 
 use anchor_lang::prelude::*;
 use anchor_lang::system_program;
+use std::mem;
+use bytemuck::{Zeroable, Pod};
 
 declare_id!("Rx1XswVLMPFAw48m2hVbKeM3eJYkZWNLe1ER5QzLg3L");
 
@@ -22,7 +24,7 @@ declare_id!("Rx1XswVLMPFAw48m2hVbKeM3eJYkZWNLe1ER5QzLg3L");
 const MAX_TITLE:     usize = 100;
 const MAX_DESC:      usize = 500;
 const MAX_FEE_NAME:  usize = 40;
-const POSITIONS:     usize = 20;
+const POSITIONS:     usize = 100;
 const TREASURY_BPS:  u64   = 200;  // 2%
 const MIN_PRIZE:     u64   = 1_000_000;   // 0.001 SOL
 const MIN_PRICE:     u64   = 1_000;       // 0.000001 SOL
@@ -80,16 +82,17 @@ pub struct TreasuryWithdrawal {
 
 // ─── Data Structs ─────────────────────────────────────────────────────────────
 /// One position in the funding round grid (00–99)
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Zeroable, Pod)]
 #[repr(C)]
 pub struct PositionInfo {
-    pub filled: bool,   // 1 byte
+    pub filled: u8,     // 1 byte
+    pub _pad:   [u8; 7], // padding for 8-byte alignment
     pub owner:  Pubkey, // 32 bytes
 }
 
 impl Default for PositionInfo {
     fn default() -> Self {
-        Self { filled: false, owner: Pubkey::default() }
+        Self { filled: 0, _pad: [0; 7], owner: Pubkey::default() }
     }
 }
 
@@ -113,7 +116,8 @@ impl ProjectAccount {
 }
 
 /// Funding campaign — holds ALL SOL (acts as vault), tracks all positions
-#[account]
+#[account(zero_copy)]
+#[repr(C)]
 pub struct CampaignAccount {
     // Identity
     pub creator:                   Pubkey,  // 32
@@ -131,34 +135,28 @@ pub struct CampaignAccount {
     pub status:                    u8,      // 1
     // Stats
     pub positions_filled:          u8,      // 1
+    pub _pad0:                     [u8; 6], // padding for 8-byte alignment
     pub total_collected:           u64,     // 8
     pub treasury_contribution:     u64,     // 8
     // Settlement
     pub winning_position:          u8,      // 1 (255 = not resolved)
-    pub has_winner:                bool,    // 1
+    pub has_winner:                u8,      // 0 = false, 1 = true
+    pub _pad1:                     [u8; 6], // padding for 8-byte alignment
     pub winner:                    Pubkey,  // 32
     pub winning_slot:              u64,     // 8
     // Metadata
     pub campaign_index:            u64,     // 8
     pub bump:                      u8,      // 1
-    // Positions (the grid)
-    pub positions: [PositionInfo; 20],      // 33 * 20 = 660
-    // Text
-    pub title:       String,                // 4 + MAX_TITLE
-    pub description: String,               // 4 + MAX_DESC
+    pub _reserved:                 [u8; 7], // padding for alignment
+    // Positions (the grid) 10x10 to satisfy bytemuck array limits
+    pub positions: [[PositionInfo; 10]; 10], 
+    // Text (fixed size for zero_copy) - sized to multiples of 8
+    pub title:       [[u8; 8]; 13],        // 104 bytes
+    pub description: [[u8; 32]; 16],       // 512 bytes
 }
 
 impl CampaignAccount {
-    pub const SPACE: usize = 8            // discriminator
-        + 32 + 32 + 32                    // creator, project, token_mint
-        + 8 + 8 + 8                       // prize, price, tokens
-        + 8 + 8 + 8                       // duration, deadline, created_at
-        + 1 + 1 + 8 + 8                   // status, filled, collected, treasury
-        + 1 + 1 + 32 + 8                  // winning_pos, has_winner, winner, slot
-        + 8 + 1                           // campaign_index, bump
-        + (33 * POSITIONS)                // positions array
-        + (4 + MAX_TITLE)                 // title
-        + (4 + MAX_DESC);                 // description
+    pub const SPACE: usize = 8 + mem::size_of::<CampaignAccount>();
 }
 
 // ─── Instruction Contexts ──────────────────────────────────────────────────────
@@ -192,7 +190,7 @@ pub struct CreateCampaign<'info> {
         ],
         bump
     )]
-    pub campaign: Box<Account<'info, CampaignAccount>>,
+    pub campaign: AccountLoader<'info, CampaignAccount>,
 
     #[account(
         mut,
@@ -213,7 +211,7 @@ pub struct FundCampaign<'info> {
         mut,
         has_one = creator @ BCFError::Unauthorized,
     )]
-    pub campaign: Box<Account<'info, CampaignAccount>>,
+    pub campaign: AccountLoader<'info, CampaignAccount>,
 
     #[account(mut)]
     pub creator: Signer<'info>,
@@ -223,14 +221,17 @@ pub struct FundCampaign<'info> {
 #[derive(Accounts)]
 pub struct BuyPosition<'info> {
     #[account(mut)]
-    pub campaign: Box<Account<'info, CampaignAccount>>,
+    pub campaign: AccountLoader<'info, CampaignAccount>,
 
     #[account(
         mut,
-        seeds = [b"project", campaign.creator.as_ref()],
+        seeds = [b"project", project_creator.key().as_ref()],
         bump  = project.bump,
     )]
     pub project: Box<Account<'info, ProjectAccount>>,
+
+    /// CHECK: Validated via seeds
+    pub project_creator: AccountInfo<'info>,
 
     #[account(mut)]
     pub buyer: Signer<'info>,
@@ -240,26 +241,24 @@ pub struct BuyPosition<'info> {
 #[derive(Accounts)]
 pub struct RecordExternalPayment<'info> {
     #[account(mut)]
-    pub campaign: Box<Account<'info, CampaignAccount>>,
+    pub campaign: AccountLoader<'info, CampaignAccount>,
 
     #[account(
         mut,
-        seeds = [b"project", campaign.creator.as_ref()],
+        seeds = [b"project", authority.key().as_ref()],
         bump  = project.bump,
     )]
     pub project: Box<Account<'info, ProjectAccount>>,
 
     /// Campaign creator authorizes this after verifying CEX payment off-chain
-    #[account(
-        constraint = authority.key() == campaign.creator @ BCFError::Unauthorized
-    )]
+    #[account(mut)]
     pub authority: Signer<'info>,
 }
 
 #[derive(Accounts)]
 pub struct ResolveCampaign<'info> {
     #[account(mut)]
-    pub campaign: Box<Account<'info, CampaignAccount>>,
+    pub campaign: AccountLoader<'info, CampaignAccount>,
 
     /// CHECK: We manually read the slot hashes sysvar for randomness
     #[account(address = anchor_lang::solana_program::sysvar::slot_hashes::ID)]
@@ -268,13 +267,8 @@ pub struct ResolveCampaign<'info> {
 
 #[derive(Accounts)]
 pub struct ClaimPrize<'info> {
-    #[account(
-        mut,
-        constraint = campaign.status == 2 @ BCFError::InvalidStatus,
-        constraint = campaign.has_winner    @ BCFError::NoWinner,
-        constraint = winner.key() == campaign.winner @ BCFError::Unauthorized,
-    )]
-    pub campaign: Box<Account<'info, CampaignAccount>>,
+    #[account(mut)]
+    pub campaign: AccountLoader<'info, CampaignAccount>,
 
     #[account(mut)]
     pub winner: Signer<'info>,
@@ -283,19 +277,18 @@ pub struct ClaimPrize<'info> {
 
 #[derive(Accounts)]
 pub struct RouteToTreasury<'info> {
-    #[account(
-        mut,
-        constraint = campaign.status == 2  @ BCFError::InvalidStatus,
-        constraint = !campaign.has_winner  @ BCFError::HasWinner,
-    )]
-    pub campaign: Box<Account<'info, CampaignAccount>>,
+    #[account(mut)]
+    pub campaign: AccountLoader<'info, CampaignAccount>,
 
     #[account(
         mut,
-        seeds = [b"project", campaign.creator.as_ref()],
+        seeds = [b"project", project_creator.key().as_ref()],
         bump  = project.bump,
     )]
     pub project: Box<Account<'info, ProjectAccount>>,
+
+    /// CHECK: Validated via seeds
+    pub project_creator: AccountInfo<'info>,
 
     pub system_program: Program<'info, System>,
 }
@@ -390,8 +383,8 @@ pub mod bags_creator_fund {
         require!(duration_seconds > 0 && duration_seconds <= MAX_DURATION, BCFError::InvalidAmount);
 
         let clock    = Clock::get()?;
-        let campaign = &mut ctx.accounts.campaign;
-        let project  = &mut ctx.accounts.project;
+        let mut campaign = ctx.accounts.campaign.load_init()?;
+        let project      = &mut ctx.accounts.project;
 
         campaign.creator                 = ctx.accounts.creator.key();
         campaign.project                 = project.key();
@@ -407,21 +400,38 @@ pub mod bags_creator_fund {
         campaign.total_collected         = 0;
         campaign.treasury_contribution   = 0;
         campaign.winning_position        = 255; // sentinel: not resolved
-        campaign.has_winner              = false;
+        campaign.has_winner              = 0;
         campaign.winner                  = Pubkey::default();
         campaign.winning_slot            = 0;
-        campaign.title                   = title;
-        campaign.description             = description;
+        
+        // Copy strings to fixed-size 2D arrays
+        let title_bytes = title.as_bytes();
+        for i in 0..13 {
+            for j in 0..8 {
+                let idx = i * 8 + j;
+                if idx < title_bytes.len() {
+                    campaign.title[i][j] = title_bytes[idx];
+                }
+            }
+        }
+
+        let desc_bytes = description.as_bytes();
+        for i in 0..16 {
+            for j in 0..32 {
+                let idx = i * 32 + j;
+                if idx < desc_bytes.len() {
+                    campaign.description[i][j] = desc_bytes[idx];
+                }
+            }
+        }
+
         campaign.campaign_index          = project.campaign_count;
         campaign.bump                    = ctx.bumps.campaign;
-
-        // Zero-initialize all 20 positions
-        campaign.positions = [PositionInfo::default(); POSITIONS];
 
         project.campaign_count = project.campaign_count.checked_add(1).unwrap();
 
         emit!(CampaignCreated {
-            campaign:                campaign.key(),
+            campaign:                ctx.accounts.campaign.key(),
             creator:                 campaign.creator,
             prize_lamports,
             position_price_lamports,
@@ -433,7 +443,7 @@ pub mod bags_creator_fund {
     /// Step 3: Creator deposits prize SOL into campaign account → activates it
     /// The campaign account itself acts as the vault (program-owned)
     pub fn fund_campaign(ctx: Context<FundCampaign>) -> Result<()> {
-        let campaign = &mut ctx.accounts.campaign;
+        let mut campaign = ctx.accounts.campaign.load_mut()?;
         require!(campaign.status == 0, BCFError::InvalidStatus);
 
         let prize = campaign.prize_lamports;
@@ -444,7 +454,7 @@ pub mod bags_creator_fund {
                 ctx.accounts.system_program.to_account_info(),
                 system_program::Transfer {
                     from: ctx.accounts.creator.to_account_info(),
-                    to:   campaign.to_account_info(),
+                    to:   ctx.accounts.campaign.to_account_info(),
                 },
             ),
             prize,
@@ -455,7 +465,7 @@ pub mod bags_creator_fund {
         campaign.deadline = clock.unix_timestamp + campaign.duration_seconds;
 
         emit!(CampaignActivated {
-            campaign: campaign.key(),
+            campaign: ctx.accounts.campaign.key(),
             deadline: campaign.deadline,
         });
         Ok(())
@@ -465,12 +475,16 @@ pub mod bags_creator_fund {
     pub fn buy_position(ctx: Context<BuyPosition>, position_index: u8) -> Result<()> {
         require!((position_index as usize) < POSITIONS, BCFError::InvalidPosition);
 
-        let campaign = &mut ctx.accounts.campaign;
+        let mut campaign = ctx.accounts.campaign.load_mut()?;
+        require!(ctx.accounts.project_creator.key() == campaign.creator, BCFError::Unauthorized);
         require!(campaign.status == 1, BCFError::InvalidStatus);
 
         let clock = Clock::get()?;
         require!(clock.unix_timestamp < campaign.deadline, BCFError::CampaignExpired);
-        require!(!campaign.positions[position_index as usize].filled, BCFError::PositionTaken);
+        
+        let row = (position_index / 10) as usize;
+        let col = (position_index % 10) as usize;
+        require!(campaign.positions[row][col].filled == 0, BCFError::PositionTaken);
 
         let price        = campaign.position_price_lamports;
         let treasury_cut = price.checked_mul(TREASURY_BPS).unwrap().checked_div(10_000).unwrap();
@@ -481,15 +495,16 @@ pub mod bags_creator_fund {
                 ctx.accounts.system_program.to_account_info(),
                 system_program::Transfer {
                     from: ctx.accounts.buyer.to_account_info(),
-                    to:   campaign.to_account_info(),
+                    to:   ctx.accounts.campaign.to_account_info(),
                 },
             ),
             price,
         )?;
 
         // Mark position as owned
-        campaign.positions[position_index as usize] = PositionInfo {
-            filled: true,
+        campaign.positions[row][col] = PositionInfo {
+            filled: 1,
+            _pad:   [0; 7],
             owner:  ctx.accounts.buyer.key(),
         };
 
@@ -503,7 +518,7 @@ pub mod bags_creator_fund {
         project.total_earned      = project.total_earned.checked_add(treasury_cut).unwrap();
 
         emit!(PositionPurchased {
-            campaign:        campaign.key(),
+            campaign:        ctx.accounts.campaign.key(),
             position_index,
             buyer:           ctx.accounts.buyer.key(),
             price_lamports:  price,
@@ -522,19 +537,24 @@ pub mod bags_creator_fund {
     ) -> Result<()> {
         require!((position_index as usize) < POSITIONS, BCFError::InvalidPosition);
 
-        let campaign = &mut ctx.accounts.campaign;
+        let mut campaign = ctx.accounts.campaign.load_mut()?;
+        require!(ctx.accounts.authority.key() == campaign.creator, BCFError::Unauthorized);
         require!(campaign.status == 1, BCFError::InvalidStatus);
 
         let clock = Clock::get()?;
         require!(clock.unix_timestamp < campaign.deadline, BCFError::CampaignExpired);
-        require!(!campaign.positions[position_index as usize].filled, BCFError::PositionTaken);
+
+        let row = (position_index / 10) as usize;
+        let col = (position_index % 10) as usize;
+        require!(campaign.positions[row][col].filled == 0, BCFError::PositionTaken);
 
         let price        = campaign.position_price_lamports;
         let treasury_cut = price.checked_mul(TREASURY_BPS).unwrap().checked_div(10_000).unwrap();
 
-        // Mark position (creator has already received the SOL off-chain/via monitoring)
-        campaign.positions[position_index as usize] = PositionInfo {
-            filled: true,
+        // Mark position
+        campaign.positions[row][col] = PositionInfo {
+            filled: 1,
+            _pad:   [0; 7],
             owner:  payer,
         };
 
@@ -547,7 +567,7 @@ pub mod bags_creator_fund {
         project.total_earned      = project.total_earned.checked_add(treasury_cut).unwrap();
 
         emit!(PositionPurchased {
-            campaign:        campaign.key(),
+            campaign:        ctx.accounts.campaign.key(),
             position_index,
             buyer:           payer,
             price_lamports:  price,
@@ -557,9 +577,9 @@ pub mod bags_creator_fund {
     }
 
     /// Resolve the campaign: derive winning position from Solana slot hash (deterministic, public)
-    /// Formula: winning_position = u64::from_le_bytes(slot_hash[0..8]) % 20
+    /// Formula: winning_position = u64::from_le_bytes(slot_hash[0..8]) % 100
     pub fn resolve_campaign(ctx: Context<ResolveCampaign>) -> Result<()> {
-        let campaign = &mut ctx.accounts.campaign;
+        let mut campaign = ctx.accounts.campaign.load_mut()?;
         require!(campaign.status == 1, BCFError::InvalidStatus);
 
         let clock = Clock::get()?;
@@ -576,24 +596,24 @@ pub mod bags_creator_fund {
             let hash_num = u64::from_le_bytes(hash_bytes);
             (hash_num % (POSITIONS as u64)) as u8
         } else {
-            // Fallback: use current slot
-            (clock.slot % (POSITIONS as u64)) as u8
+            (clock.slot % 100) as u8
         };
 
         campaign.winning_position = winning_position;
-        campaign.winning_slot     = clock.slot;
-
-        let pos = campaign.positions[winning_position as usize];
+        let row = (winning_position / 10) as usize;
+        let col = (winning_position % 10) as usize;
+        let pos = campaign.positions[row][col];
         campaign.has_winner = pos.filled;
-        campaign.winner     = if pos.filled { pos.owner } else { Pubkey::default() };
+        campaign.winner     = if pos.filled == 1 { pos.owner } else { Pubkey::default() };
         campaign.status     = 2; // settled
+        campaign.winning_slot = clock.slot;
 
         let total_pot = campaign.prize_lamports.checked_add(campaign.total_collected).unwrap();
 
         emit!(CampaignResolved {
-            campaign:         campaign.key(),
+            campaign:         ctx.accounts.campaign.key(),
             winning_position,
-            has_winner:       campaign.has_winner,
+            has_winner:       campaign.has_winner == 1,
             winner:           campaign.winner,
             total_pot,
             winning_slot:     clock.slot,
@@ -603,7 +623,10 @@ pub mod bags_creator_fund {
 
     /// Winner claims their prize — all SOL in campaign account goes to them
     pub fn claim_prize(ctx: Context<ClaimPrize>) -> Result<()> {
-        let campaign = &ctx.accounts.campaign;
+        let campaign = ctx.accounts.campaign.load()?;
+        require!(campaign.status == 2, BCFError::InvalidStatus);
+        require!(campaign.has_winner == 1, BCFError::NoWinner);
+        require!(ctx.accounts.winner.key() == campaign.winner, BCFError::Unauthorized);
 
         let total    = campaign.prize_lamports.checked_add(campaign.total_collected).unwrap();
         let rent_min = Rent::get()?.minimum_balance(CampaignAccount::SPACE);
@@ -622,7 +645,10 @@ pub mod bags_creator_fund {
 
     /// Route prize to project treasury when winning position was unclaimed
     pub fn route_no_winner_to_treasury(ctx: Context<RouteToTreasury>) -> Result<()> {
-        let campaign = &ctx.accounts.campaign;
+        let campaign = ctx.accounts.campaign.load()?;
+        require!(campaign.status == 2, BCFError::InvalidStatus);
+        require!(campaign.has_winner == 0, BCFError::HasWinner);
+        require!(ctx.accounts.project_creator.key() == campaign.creator, BCFError::Unauthorized);
         let total    = campaign.prize_lamports
             .checked_add(campaign.total_collected)
             .unwrap();
