@@ -28,7 +28,16 @@ export default function ExplorePage() {
     load();
   }, [connection]);
 
-  const filtered = all.filter(c => {
+  const sorted = [...all].sort((a, b) => {
+    const priorities = { active: 1, pending: 2, settled: 3, cancelled: 4 };
+    const pa = priorities[a.status] || 99;
+    const pb = priorities[b.status] || 99;
+    if (pa !== pb) return pa - pb;
+    // Secondary sort: newest first
+    return (b.createdAt || 0) - (a.createdAt || 0);
+  });
+
+  const filtered = sorted.filter(c => {
     if (status !== "all" && c.status !== status) return false;
     if (category !== "all" && c.category !== category) return false;
     if (search) {

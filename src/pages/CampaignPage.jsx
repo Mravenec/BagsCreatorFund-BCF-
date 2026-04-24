@@ -5,7 +5,8 @@ import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { Transaction, SystemProgram, PublicKey, LAMPORTS_PER_SOL } from "@solana/web3.js";
 import {
   fetchCampaign, fundCampaignOnChain, buyPositionOnChain,
-  resolveCampaignOnChain, campaignAccountToDisplay, getProgram,
+  resolveCampaignOnChain, claimPrizeOnChain, routeToTreasuryOnChain,
+  campaignAccountToDisplay, getProgram, fetchProject,
   fmtPos, posStatus, totalPot, timeLeft, isExpired,
 } from "../lib/programClient.js";
 import { AnchorProvider } from "@coral-xyz/anchor";
@@ -539,6 +540,38 @@ export default function CampaignPage() {
     } finally { setSettling(false); }
   }
 
+  async function handleClaim() {
+    if (!connected) { setVisible(true); return; }
+    setSettling(true);
+    toast("Claiming prize...", "info");
+    try {
+      const provider = new AnchorProvider(connection, anchorWallet, { commitment: "confirmed" });
+      await claimPrizeOnChain(provider, { campaignPDA: campaign.pda });
+      toast("Prize sent to your wallet! 🥳", "success");
+      // Refresh
+      const account = await fetchCampaign(provider, campaign.pda);
+      setCampaign(campaignAccountToDisplay(campaign.pda, account));
+    } catch (e) {
+      toast("Claim error: " + e.message, "error");
+    } finally { setSettling(false); }
+  }
+
+  async function handleRoute() {
+    if (!connected) { setVisible(true); return; }
+    setSettling(true);
+    toast("Moving funds to treasury...", "info");
+    try {
+      const provider = new AnchorProvider(connection, anchorWallet, { commitment: "confirmed" });
+      await routeToTreasuryOnChain(provider, { campaignPDA: campaign.pda });
+      toast("Funds transferred to project treasury ✅", "success");
+      // Refresh
+      const account = await fetchCampaign(provider, campaign.pda);
+      setCampaign(campaignAccountToDisplay(campaign.pda, account));
+    } catch (e) {
+      toast("Transfer error: " + e.message, "error");
+    } finally { setSettling(false); }
+  }
+
   const statusBadge = {
     pending:  <span className="badge badge-pending">◐ Pending Deposit</span>,
     active:   <span className="badge badge-active">● Active</span>,
@@ -593,8 +626,29 @@ export default function CampaignPage() {
               </div>
             )}
             {campaign.winnerWallet && myPositions.includes(campaign.winningPosition) && (
-              <div style={{ marginTop:"16px", padding:"14px 20px", background:"rgba(56,189,248,.1)", border:"1px solid rgba(56,189,248,.3)", borderRadius:"var(--r)", fontWeight:700, color:"var(--accent)", fontSize:"1rem" }}>
-                🏆 Congratulations — you won this round!
+              <div style={{ marginTop:"16px", display:"flex", flexDirection:"column", alignItems:"center", gap:"10px" }}>
+                <div style={{ padding:"14px 20px", background:"rgba(56,189,248,.1)", border:"1px solid rgba(56,189,248,.3)", borderRadius:"var(--r)", fontWeight:700, color:"var(--accent)", fontSize:"1rem" }}>
+                  🏆 Congratulations — you won this round!
+                </div>
+                <button className="btn btn-primary" onClick={handleClaim} disabled={settling}>
+                  {settling ? "Processing..." : "⚡ Claim Prize"}
+                </button>
+              </div>
+            )}
+            {!campaign.winnerWallet && isCreator && (
+              <div style={{ marginTop:"16px", display:"flex", flexDirection:"column", alignItems:"center", gap:"10px" }}>
+                {campaign.prizeSOL > 0 ? (
+                  <>
+                    <button className="btn btn-secondary" onClick={handleRoute} disabled={settling}>
+                      {settling ? "Processing..." : "🏦 Move Funds to Treasury"}
+                    </button>
+                    <p style={{ fontSize:".75rem", color:"var(--text3)" }}>As there was no winner, you can move the SOL to your project's treasury.</p>
+                  </>
+                ) : (
+                  <div style={{ padding:"10px 20px", background:"rgba(52,211,153,.1)", border:"1px solid rgba(52,211,153,.2)", borderRadius:"var(--r)", color:"var(--green)", fontWeight:600 }}>
+                    ✅ Funds have been successfully moved to the project treasury.
+                  </div>
+                )}
               </div>
             )}
           </div>

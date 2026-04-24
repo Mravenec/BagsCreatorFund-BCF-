@@ -5,9 +5,18 @@ import { toUSDC } from '../lib/constants.js';
 import { shortAddr } from '../lib/solana.js';
 
 export default function CampaignCard({ campaign: c }) {
+  const [timeDisplay, setTimeDisplay] = React.useState(c.deadline ? timeLeft(c.deadline) : "—");
   const sold    = posStatus(c);
   const pot     = totalPot(c);
   const expired = isExpired(c);
+
+  React.useEffect(() => {
+    if (!c.deadline || c.status !== 'active') return;
+    const interval = setInterval(() => {
+      setTimeDisplay(timeLeft(c.deadline));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [c.deadline, c.status]);
 
   const badge = {
     pending:  <span className="badge badge-pending">◐ Pending</span>,
@@ -61,7 +70,7 @@ export default function CampaignCard({ campaign: c }) {
           <span style={{ fontWeight: 700, color: c.status === 'settled' ? 'var(--accent)' : expired ? 'var(--danger)' : 'var(--text2)' }}>
             {c.status === 'settled'
               ? `Winner: #${fmtPos(c.winningPosition)}`
-              : c.deadline ? timeLeft(c.deadline) : '—'}
+              : timeDisplay}
           </span>
         </div>
       </div>
