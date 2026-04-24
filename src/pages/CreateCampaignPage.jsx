@@ -44,8 +44,12 @@ export default function CreateCampaignPage() {
         if (project) {
           setMyTokens([{
             mint: project.tokenMint.toBase58(),
-            symbol: "???",
-            name: "Bags Token"
+            symbol: project.resolvedSymbol || "???",
+            name: project.resolvedName || "Bags Token",
+            feeModeName: project.feeModeName,
+            treasury: {
+              balanceSOL: (project.treasuryLamports?.toNumber() || 0) / LAMPORTS_PER_SOL,
+            }
           }]);
         }
       }
@@ -109,9 +113,18 @@ export default function CreateCampaignPage() {
       toast("Campaign created! Deposit prize to activate.", "success");
       navigate(`/campaign/${campaignPDA.toBase58()}`);
     } catch(e) {
-      toast("Error: " + (e.message || "Failed to create campaign"), "error");
-      console.error(e);
-    } finally { setLoading(false); }
+      console.error("[BCF] Launch error:", e);
+      const m = e.message || e.toString() || "";
+      if (/rejected|cancelled|canceled/i.test(m)) {
+        toast("Launch cancelled", "info");
+      } else if (m.includes("0x1")) {
+        toast("Insufficient funds for campaign creation", "error");
+      } else {
+        toast("Error: " + (m.slice(0, 80) || "Failed to create campaign"), "error");
+      }
+    } finally {
+      setLoading(false);
+    }
   }
 
   const stepContent = [

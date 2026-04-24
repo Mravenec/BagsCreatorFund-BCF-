@@ -6,6 +6,8 @@ console.log(">>> [BCF] programClient.js cargado correctamente <<<");
 import { Buffer } from 'buffer';
 import process from 'process';
 
+import { getBagsToken } from './bags.js';
+
 if (typeof window !== 'undefined') {
   window.Buffer = Buffer;
   window.process = process;
@@ -31,6 +33,22 @@ const decodeString = (bytes) => {
   const text = new TextDecoder().decode(new Uint8Array(flatBytes));
   return text.replace(/\0/g, '').trim();
 };
+
+// ─── Identity Cache (Prevents 429 Rate Limiting) ──────────────────────────────
+const IDENTITY_CACHE = new Map(); // Memory cache
+const CACHE_TTL = 1000 * 60 * 10; // 10 minutes
+
+function getCachedIdentity(mint) {
+  if (!mint) return null;
+  const cached = IDENTITY_CACHE.get(mint.toString());
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) return cached.data;
+  return null;
+}
+
+function setCachedIdentity(mint, data) {
+  if (!mint || !data) return;
+  IDENTITY_CACHE.set(mint.toString(), { data, timestamp: Date.now() });
+}
 
 // ─── Program ID ────────────────────────────────────────────────────────────────
 // IMPORTANT: Replace this after running `anchor deploy` in the anchor/ directory
@@ -58,6 +76,35 @@ export function getCampaignPDA(creatorPubkey, index) {
   );
 }
 
+// ─── Metaplex Metadata Constants ───────────────────────────────────────────────
+const METADATA_PROGRAM_ID = PROGRAM_ID;
+
+/** Resolves the Metadata PDA for a given Mint address */
+export function getMetadataPDA(mint) {
+  return PublicKey.findProgramAddressSync(
+    [ Buffer.from('metadata'), METADATA_PROGRAM_ID.toBuffer(), new PublicKey(mint).toBuffer() ],
+    METADATA_PROGRAM_ID
+  )[0];
+}
+
+/** Decodes Metaplex Metadata from raw account data */
+function decodeMetadata(data) {
+  try {
+    // Name starts at 65 (32 bytes), Symbol at 97 (10 bytes)
+    const name = new TextDecoder().decode(data.slice(65, 97)).replace(/\0/g, '').trim();
+    const symbol = new TextDecoder().decode(data.slice(97, 107)).replace(/\0/g, '').trim();
+    return { name, symbol };
+  } catch (e) { return null; }
+}
+
+/** Fetches token identity directly from the blockchain (Metaplex) */
+export async function fetchOnChainMetadata(connection, mint) {
+  try {
+    const info = await connection.getAccountInfo(getMetadataPDA(mint));
+    return info ? decodeMetadata(info.data) : null;
+  } catch (e) { return null; }
+}
+
 // ─── Program instance ──────────────────────────────────────────────────────────
 export function getProgram(provider) {
   return new Program(IDL, PROGRAM_ID, provider);
@@ -69,52 +116,40 @@ export function getProgram(provider) {
  * Initialize or fetch the project account for a creator.
  * Idempotent: if project already exists, returns its data.
  */
-export async function initializeProject(provider, { tokenMint, feeModeName }) {
+export async function initializeProject(provider, { tokenMint, feeModeName, name, symbol }) {
   try {
-    console.log("[BCF] initializeProject START");
-    console.log("[BCF] Token mint:", tokenMint);
-    console.log("[BCF] Fee mode:", feeModeName);
+    console.log("[BCF] initializeProject START:", name, `($${symbol})`);
     
     const program = getProgram(provider);
-    console.log("[BCF] Program obtained successfully");
-    
     const creator = provider.wallet?.publicKey;
-    if (!creator) {
-      throw new Error("Wallet not connected: provider.wallet.publicKey is undefined");
-    }
+    if (!creator) throw new Error("Wallet not connected");
     
     const [projectPDA] = getProjectPDA(creator);
-    console.log("[BCF] Project PDA:", projectPDA.toBase58());
-
+    
     // Check if already initialized
     try {
-      console.log("[BCF] Checking if project already exists...");
       const existing = await program.account.projectAccount.fetch(projectPDA);
-      console.log("[BCF] Project already exists, returning existing");
       return { projectPDA, account: existing, isNew: false };
-    } catch (fetchErr) {
-      console.log("[BCF] Project not initialized, creating new one:", fetchErr.message || fetchErr);
-      // Not initialized — create it
-    }
+    } catch (fetchErr) {}
 
-  console.log("[BCF] Creating initializeProject transaction...");
     // Defensive check for tokenMint
     let mintPub;
-    try {
-      mintPub = new PublicKey(tokenMint);
-    } catch (e) {
-      console.warn("[BCF] Invalid tokenMint provided, using fallback:", tokenMint);
-      mintPub = new PublicKey("11111111111111111111111111111111");
-    }
+    try { mintPub = new PublicKey(tokenMint); }
+    catch (e) { mintPub = new PublicKey("11111111111111111111111111111111"); }
 
     const tx = await program.methods
-      .initializeProject(mintPub, feeModeName)
+      .initializeProject(
+        mintPub, 
+        feeModeName, 
+        name || "Bags Token", 
+        symbol || "BCF"
+      )
       .accounts({
         project:       projectPDA,
-        creator:       creator,
+        creator:       new PublicKey(creator.toBase58()),
         systemProgram: SystemProgram.programId,
       })
-      .rpc({ commitment: 'confirmed' });
+      .rpc();
     
     console.log("[BCF] Transaction successful:", tx);
     return { projectPDA, tx, isNew: true };
@@ -173,44 +208,101 @@ export async function createCampaignOnChain(provider, {
  * Creator funds the campaign (deposits prize SOL → activates it).
  */
 export async function fundCampaignOnChain(provider, { campaignPDA }) {
-  const program = getProgram(provider);
-  const creator = provider.wallet.publicKey;
+  try {
+    const program = getProgram(provider);
+    const walletCreator = provider?.wallet?.publicKey;
+    if (!walletCreator) throw new Error("Wallet not connected");
 
-  const tx = await program.methods
-    .fundCampaign()
-    .accounts({
+    // Fetch campaign first to check for identity collision
+    const campaignAccount = await program.account.campaignAccount.fetch(new PublicKey(campaignPDA));
+    const campaignCreator = campaignAccount.creator;
+    
+    const isSame = walletCreator.toBase58() === campaignCreator.toBase58();
+
+    // Workaround for AccountBorrowFailed: 
+    // If the wallet is the same as the creator, Anchor might resolve it automatically as the signer.
+    // Explicitly passing it twice (once in campaign data and once as signer) often triggers the borrow conflict.
+    const accounts = {
       campaign:      new PublicKey(campaignPDA),
-      creator:       creator,
+      creator:       walletCreator,
       systemProgram: SystemProgram.programId,
-    })
-    .rpc({ commitment: 'confirmed' });
+    };
 
-  const account = await program.account.campaignAccount.fetch(new PublicKey(campaignPDA));
-  return { tx, account };
+    console.log("[BCF] fundCampaignOnChain - Executing with explicit accounts:", accounts);
+
+    const tx = await program.methods
+      .fundCampaign()
+      .accounts(accounts)
+      .rpc({ 
+        commitment: 'confirmed'
+      });
+
+    console.log("[BCF] fundCampaignOnChain - SUCCESS with skipPreflight. Tx:", tx);
+    const updatedAccount = await program.account.campaignAccount.fetch(new PublicKey(campaignPDA));
+    return { tx, account: updatedAccount };
+  } catch (e) {
+    console.error("[BCF] fundCampaignOnChain FAILED:", {
+      message: e.message,
+      logs: e.logs,
+      stack: e.stack,
+      error: e
+    });
+    throw e;
+  }
 }
 
 /**
  * Wallet user buys a specific position (0–99).
  */
 export async function buyPositionOnChain(provider, { campaignPDA, positionIndex }) {
-  const program  = getProgram(provider);
-  const buyer    = provider.wallet.publicKey;
-  const campaign = await program.account.campaignAccount.fetch(new PublicKey(campaignPDA));
-  const [projectPDA] = getProjectPDA(new PublicKey(campaign.creator));
+  try {
+    const program = getProgram(provider);
+    const buyer   = provider?.wallet?.publicKey;
+    if (!buyer) throw new Error("Wallet not connected");
 
-  const tx = await program.methods
-    .buyPosition(positionIndex)
-    .accounts({
-      campaign:      new PublicKey(campaignPDA),
-      project:       projectPDA,
-      buyer:         buyer,
-      systemProgram: SystemProgram.programId,
-    })
-    .rpc({ commitment: 'confirmed' });
+    const campaign = await program.account.campaignAccount.fetch(new PublicKey(campaignPDA));
+    const [projectPDA] = getProjectPDA(new PublicKey(campaign.creator));
+    
+    const buyerKeyStr = buyer.toBase58();
+    const creatorKeyStr = campaign.creator.toBase58();
+    const areSame = buyerKeyStr === creatorKeyStr;
 
-  const updatedCampaign = await program.account.campaignAccount.fetch(new PublicKey(campaignPDA));
-  return { tx, account: updatedCampaign };
+    console.log("[BCF] buyPositionOnChain - PDA:", campaignPDA);
+    console.log("[BCF] buyPositionOnChain - Buyer:", buyerKeyStr);
+    console.log("[BCF] buyPositionOnChain - Project Creator:", creatorKeyStr);
+    console.log("[BCF] buyPositionOnChain - Same Person?", areSame);
+
+    const accounts = {
+      campaign:       new PublicKey(campaignPDA),
+      project:        projectPDA,
+      buyer:          new PublicKey(buyerKeyStr),
+      projectCreator: new PublicKey(creatorKeyStr),
+      systemProgram:  SystemProgram.programId,
+    };
+
+    console.log("[BCF] buyPositionOnChain - Executing with explicit accounts:", accounts);
+
+    const tx = await program.methods
+      .buyPosition(positionIndex)
+      .accounts(accounts)
+      .rpc({ 
+        commitment: 'confirmed'
+      });
+
+    console.log("[BCF] buyPositionOnChain - SUCCESS. Tx:", tx);
+    const updatedCampaign = await program.account.campaignAccount.fetch(new PublicKey(campaignPDA));
+    return { tx, account: updatedCampaign };
+  } catch (e) {
+    console.error("[BCF] buyPositionOnChain FAILED:", {
+      message: e.message,
+      logs: e.logs,
+      stack: e.stack,
+      error: e
+    });
+    throw e;
+  }
 }
+
 
 /**
  * Creator records an external (CEX) payment on-chain.
@@ -327,6 +419,30 @@ export async function fetchProject(provider, creatorPubkey) {
     const [projectPDA] = getProjectPDA(creatorPubkey);
     console.log("[BCF] fetchProject at:", projectPDA.toBase58());
     const account = await program.account.projectAccount.fetch(projectPDA);
+    
+    // 1. Resolve Identity from On-Chain Fields (IDL: projectName / tokenSymbol)
+    account.resolvedName = account.projectName || "Bags Token";
+    account.resolvedSymbol = account.tokenSymbol || "BCF";
+    account.resolvedLogo = null;
+    account.resolvedDesc = "";
+
+    const mintStr = account.tokenMint.toBase58();
+    
+    // 2. Background Enhancement (Bags API for visuals only)
+    try {
+      const bagsData = await getBagsToken(mintStr);
+      if (bagsData) {
+        // We only override name/symbol if the on-chain ones are the defaults
+        if (account.resolvedName === "Bags Token") account.resolvedName = bagsData.name || account.resolvedName;
+        if (account.resolvedSymbol === "BCF") account.resolvedSymbol = bagsData.symbol || account.resolvedSymbol;
+        
+        account.resolvedLogo = bagsData.image || bagsData.logo || null;
+        account.resolvedDesc = bagsData.description || "";
+      }
+    } catch (e) {
+      console.warn("[BCF] Visual metadata fetch skipped:", e.message);
+    }
+
     return { pda: projectPDA.toBase58(), ...account };
   } catch (e) {
     console.warn("[BCF] No project found for:", creatorPubkey);

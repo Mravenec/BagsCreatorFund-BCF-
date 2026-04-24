@@ -207,10 +207,7 @@ pub struct CreateCampaign<'info> {
 
 #[derive(Accounts)]
 pub struct FundCampaign<'info> {
-    #[account(
-        mut,
-        has_one = creator @ BCFError::Unauthorized,
-    )]
+    #[account(mut)]
     pub campaign: AccountLoader<'info, CampaignAccount>,
 
     #[account(mut)]
@@ -299,7 +296,6 @@ pub struct WithdrawTreasury<'info> {
         mut,
         seeds = [b"project", creator.key().as_ref()],
         bump  = project.bump,
-        has_one = creator @ BCFError::Unauthorized,
     )]
     pub project: Account<'info, ProjectAccount>,
 
@@ -443,12 +439,15 @@ pub mod bags_creator_fund {
     /// Step 3: Creator deposits prize SOL into campaign account → activates it
     /// The campaign account itself acts as the vault (program-owned)
     pub fn fund_campaign(ctx: Context<FundCampaign>) -> Result<()> {
-        let mut campaign = ctx.accounts.campaign.load_mut()?;
-        require!(campaign.status == 0, BCFError::InvalidStatus);
-
-        let prize = campaign.prize_lamports;
+        let prize = {
+            let campaign = ctx.accounts.campaign.load()?;
+            require!(campaign.status == 0, BCFError::InvalidStatus);
+            require!(campaign.creator == ctx.accounts.creator.key(), BCFError::Unauthorized);
+            campaign.prize_lamports
+        };
 
         // Transfer prize from creator to campaign account (vault)
+        // We do this while campaign data is NOT borrowed to avoid AccountBorrowFailed
         system_program::transfer(
             CpiContext::new(
                 ctx.accounts.system_program.to_account_info(),
@@ -461,6 +460,7 @@ pub mod bags_creator_fund {
         )?;
 
         let clock = Clock::get()?;
+        let mut campaign = ctx.accounts.campaign.load_mut()?;
         campaign.status   = 1; // active
         campaign.deadline = clock.unix_timestamp + campaign.duration_seconds;
 
@@ -475,21 +475,26 @@ pub mod bags_creator_fund {
     pub fn buy_position(ctx: Context<BuyPosition>, position_index: u8) -> Result<()> {
         require!((position_index as usize) < POSITIONS, BCFError::InvalidPosition);
 
-        let mut campaign = ctx.accounts.campaign.load_mut()?;
-        require!(ctx.accounts.project_creator.key() == campaign.creator, BCFError::Unauthorized);
-        require!(campaign.status == 1, BCFError::InvalidStatus);
+        let (price, tokens, treasury_cut, row, col) = {
+            let campaign = ctx.accounts.campaign.load()?;
+            require!(ctx.accounts.project_creator.key() == campaign.creator, BCFError::Unauthorized);
+            require!(campaign.status == 1, BCFError::InvalidStatus);
 
-        let clock = Clock::get()?;
-        require!(clock.unix_timestamp < campaign.deadline, BCFError::CampaignExpired);
-        
-        let row = (position_index / 10) as usize;
-        let col = (position_index % 10) as usize;
-        require!(campaign.positions[row][col].filled == 0, BCFError::PositionTaken);
+            let clock = Clock::get()?;
+            require!(clock.unix_timestamp < campaign.deadline, BCFError::CampaignExpired);
+            
+            let r = (position_index / 10) as usize;
+            let c = (position_index % 10) as usize;
+            require!(campaign.positions[r][c].filled == 0, BCFError::PositionTaken);
 
-        let price        = campaign.position_price_lamports;
-        let treasury_cut = price.checked_mul(TREASURY_BPS).unwrap().checked_div(10_000).unwrap();
+            let p = campaign.position_price_lamports;
+            let t = campaign.tokens_per_position;
+            let tc = p.checked_mul(TREASURY_BPS).unwrap().checked_div(10_000).unwrap();
+            (p, t, tc, r, c)
+        };
 
         // Transfer SOL from buyer to campaign account (vault)
+        // Release campaign borrow before CPI
         system_program::transfer(
             CpiContext::new(
                 ctx.accounts.system_program.to_account_info(),
@@ -501,6 +506,7 @@ pub mod bags_creator_fund {
             price,
         )?;
 
+        let mut campaign = ctx.accounts.campaign.load_mut()?;
         // Mark position as owned
         campaign.positions[row][col] = PositionInfo {
             filled: 1,
@@ -522,7 +528,7 @@ pub mod bags_creator_fund {
             position_index,
             buyer:           ctx.accounts.buyer.key(),
             price_lamports:  price,
-            tokens_received: campaign.tokens_per_position,
+            tokens_received: tokens,
         });
         Ok(())
     }
@@ -678,6 +684,7 @@ pub mod bags_creator_fund {
     /// All withdrawals are emitted as events — fully transparent to community
     pub fn withdraw_treasury(ctx: Context<WithdrawTreasury>, amount: u64) -> Result<()> {
         let project = &mut ctx.accounts.project;
+        require!(project.creator == ctx.accounts.creator.key(), BCFError::Unauthorized);
         require!(amount > 0, BCFError::InvalidAmount);
         require!(amount <= project.treasury_lamports, BCFError::InsufficientFunds);
 

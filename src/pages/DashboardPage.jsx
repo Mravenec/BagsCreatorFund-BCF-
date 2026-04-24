@@ -22,8 +22,6 @@ export default function DashboardPage() {
   const [balance,   setBalance]   = useState(0);
   const [loading,   setLoading]   = useState(true);
   const [dropping,  setDropping]  = useState(false);
-  const [withdrawToken,  setWithdrawToken]  = useState(null);
-  const [withdrawAmount, setWithdrawAmount] = useState("");
 
   async function refresh() {
     if (!wallet) {
@@ -37,17 +35,18 @@ export default function DashboardPage() {
     try {
       const provider = new AnchorProvider(connection, wallet, { commitment: "confirmed" });
       
-      // 1. Fetch Project
+      // 1. Fetch Project - Deep resolution from Mint
       const project = await fetchProject(provider, w);
       if (project) {
         setTokens([{
           mint: project.tokenMint?.toBase58() || "???",
-          symbol: "???",
-          name: "Bags Token",
-          description: "Project token created via BCF",
-          feeModeName: project.feeMode,
+          symbol: project.resolvedSymbol || "BCF",
+          name: project.resolvedName || "Bags Token",
+          logo: project.resolvedLogo,
+          description: project.resolvedDesc || "Project token created via BCF",
+          feeModeName: project.feeModeName,
           treasury: {
-            balanceSOL: (project.treasuryBalance?.toNumber() || 0) / LAMPORTS_PER_SOL,
+            balanceSOL: (project.treasuryLamports?.toNumber() || 0) / LAMPORTS_PER_SOL,
           }
         }]);
       } else {
@@ -64,7 +63,6 @@ export default function DashboardPage() {
 
     } catch (e) {
       console.error("[BCF] Dashboard refresh error:", e.message || e);
-      if (e.stack) console.error("[BCF] Stack:", e.stack);
       toast("Error al cargar datos del Dashboard", "error");
     } finally {
       setLoading(false);
@@ -78,7 +76,7 @@ export default function DashboardPage() {
 
   async function handleAirdrop() {
     if (!wallet) return;
-    setDropping(true);
+    setForwarding(true);
     try {
       toast("Solicitando airdrop de 2 SOL...", "info");
       await requestAirdrop(wallet.publicKey.toBase58(), 2);
@@ -166,31 +164,54 @@ export default function DashboardPage() {
             <Link to="/create-token" className="btn btn-primary">Empezar Ahora</Link>
           </div>
         ) : (
-          <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: "20px" }}>
+          <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: "24px" }}>
             {tokens.map(t => (
-              <div key={t.mint} className="card shadow-sm" style={{ padding: "24px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "16px" }}>
-                  <div>
-                    <h3 style={{ fontWeight: 700, fontSize: "1.1rem" }}>{t.name}</h3>
-                    <code style={{ fontSize: ".7rem", color: "var(--text3)" }}>{t.mint.slice(0,8)}...{t.mint.slice(-8)}</code>
+              <div key={t.mint} className="card shadow-sm" style={{ padding: "24px", position: "relative", overflow: "hidden" }}>
+                <div style={{ display: "flex", gap: "16px", marginBottom: "20px" }}>
+                  <div style={{ width: "64px", height: "64px", borderRadius: "12px", background: "var(--bg3)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, overflow: "hidden", border: "1px solid var(--border)" }}>
+                    {t.logo ? (
+                      <img src={t.logo} alt={t.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                    ) : (
+                      <span style={{ fontSize: "1.5rem" }}>🪙</span>
+                    )}
                   </div>
-                  <div className="badge badge-accent" style={{ fontSize: ".7rem" }}>{t.feeModeName}</div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                      <h3 style={{ fontWeight: 800, fontSize: "1.2rem", margin: 0 }}>{t.name}</h3>
+                      <div className="badge badge-accent" style={{ fontSize: ".7rem", padding: "3px 8px" }}>
+                        {t.symbol !== "???" ? `$${t.symbol}` : t.feeModeName}
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "4px" }}>
+                      <code style={{ fontSize: ".65rem", color: "var(--text3)" }}>
+                        {t.mint.slice(0,6)}...{t.mint.slice(-6)}
+                      </code>
+                      <button 
+                        onClick={() => {
+                          navigator.clipboard.writeText(t.mint);
+                          toast("Mint copiado!", "success");
+                        }}
+                        style={{ background: "none", border: "none", color: "var(--accent)", cursor: "pointer", fontSize: ".8rem", padding: 0 }}
+                        title="Copiar Mint"
+                      >
+                        📋
+                      </button>
+                    </div>
+                  </div>
                 </div>
+
+                <p style={{ fontSize: ".82rem", color: "var(--text2)", marginBottom: "20px", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", lineHeight: 1.5 }}>
+                  {t.description}
+                </p>
                 
-                <div style={{ background: "rgba(255,255,255,0.03)", padding: "16px", borderRadius: "12px", marginBottom: "20px" }}>
-                  <div style={{ fontSize: ".75rem", color: "var(--text3)", marginBottom: "4px" }}>Tesorería del Proyecto</div>
-                  <div style={{ fontSize: "1.2rem", fontWeight: 700, color: "var(--green)" }}>{t.treasury.balanceSOL.toFixed(4)} SOL</div>
+                <div style={{ background: "rgba(56,189,248,.04)", padding: "16px", borderRadius: "12px", marginBottom: "20px", border: "1px solid rgba(56,189,248,.1)" }}>
+                  <div style={{ fontSize: ".72rem", color: "var(--text3)", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: "4px" }}>Tesorería del Proyecto</div>
+                  <div style={{ fontSize: "1.3rem", fontWeight: 800, color: "var(--green)" }}>{t.treasury.balanceSOL.toFixed(4)} SOL</div>
                 </div>
 
                 <div style={{ display: "flex", gap: "10px" }}>
-                  <Link to="/create-campaign" className="btn btn-sm btn-primary" style={{ flex: 1 }}>Nueva Campaña</Link>
-                  <button 
-                    className="btn btn-sm btn-outline" 
-                    disabled={t.treasury.balanceSOL <= 0}
-                    onClick={() => setWithdrawToken(t)}
-                  >
-                    Retirar
-                  </button>
+                  <Link to="/create-campaign" className="btn btn-primary" style={{ flex: 1, padding: "10px" }}>Nueva Campaña</Link>
+                  <a href={`https://bags.fm/token/${t.mint}`} target="_blank" rel="noreferrer" className="btn btn-ghost" style={{ padding: "10px", fontSize: ".8rem" }}>Ver en Bags ↗</a>
                 </div>
               </div>
             ))}

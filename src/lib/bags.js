@@ -27,6 +27,24 @@ export async function createBagsTokenInfo({ name, symbol, description, imageUrl 
   return data; // { metadataUri, mint?, ... }
 }
 
+/**
+ * Step 2: Get the actual launch transaction from Bags
+ * POST /token-launch/create-launch-transaction
+ */
+export async function createBagsLaunchTransaction({ metadataUri, creator, feeModeId }) {
+  const r = await fetch(`${BASE}/token-launch/create-launch-transaction`, {
+    method: 'POST', headers: H(),
+    body: JSON.stringify({
+      metadataUri,
+      creator: creator.toString(),
+      feeMode: feeModeId,
+    }),
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data?.message || `Bags API error ${r.status}`);
+  return data; // { transaction, mint }
+}
+
 // Get token info by mint
 export async function getBagsToken(mint) {
   const r = await fetch(`${BASE}/token/${mint}`, { headers: H() });

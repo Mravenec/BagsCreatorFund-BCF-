@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
-import { useWallet, useConnection } from "@solana/wallet-adapter-react";
+import { useWallet, useConnection, useAnchorWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { Transaction, SystemProgram, PublicKey, LAMPORTS_PER_SOL } from "@solana/web3.js";
 import {
@@ -66,7 +66,8 @@ function useCopy() {
 
 // ─── DEPOSIT MODAL — Creator deposits prize to activate ───────────────────────
 function DepositModal({ campaign, connection, onClose, onActivated }) {
-  const { connected, publicKey, sendTransaction, wallet } = useWallet();
+  const { connected, publicKey, wallet } = useWallet();
+  const anchorWallet = useAnchorWallet();
   const { setVisible } = useWalletModal();
   const toast = useToast();
   const [tab,     setTab]     = useState("wallet");
@@ -107,7 +108,7 @@ function DepositModal({ campaign, connection, onClose, onActivated }) {
     }
     setSending(true);
     try {
-      const provider = new AnchorProvider(connection, wallet, { commitment: "confirmed" });
+      const provider = new AnchorProvider(connection, anchorWallet, { commitment: "confirmed" });
       toast("Approve the prize deposit in your wallet...", "info");
       const { tx, account } = await fundCampaignOnChain(provider, { campaignPDA: campaign.pda });
       
@@ -115,10 +116,18 @@ function DepositModal({ campaign, connection, onClose, onActivated }) {
       onActivated(campaignAccountToDisplay(campaign.pda, account));
       setTimeout(onClose, 1800);
     } catch(e) {
-      const m = e.message||"";
-      if (/rejected|cancelled|canceled/i.test(m)) toast("Deposit cancelled", "info");
-      else toast("Failed: " + m.slice(0,100), "error");
-    } finally { setSending(false); }
+      console.error("[BCF] Deposit error:", e);
+      const m = e.message || e.toString() || "";
+      if (/rejected|cancelled|canceled/i.test(m)) {
+        toast("Deposit cancelled", "info");
+      } else if (m.includes("0x1")) {
+        toast("Insufficient funds for prize + fees", "error");
+      } else {
+        toast(`Failed: ${m.slice(0, 80)}...`, "error");
+      }
+    } finally {
+      setSending(false);
+    }
   }
 
   function activate(txSig) {
@@ -220,7 +229,8 @@ function DepositModal({ campaign, connection, onClose, onActivated }) {
 
 // ─── PARTICIPATE MODAL — Anyone buys a position ───────────────────────────────
 function ParticipateModal({ campaign, positionIndex, connection, onClose, onSuccess }) {
-  const { connected, publicKey, sendTransaction, wallet } = useWallet();
+  const { connected, publicKey, wallet } = useWallet();
+  const anchorWallet = useAnchorWallet();
   const { setVisible } = useWalletModal();
   const toast = useToast();
   const [tab,     setTab]     = useState("wallet");
@@ -261,7 +271,7 @@ function ParticipateModal({ campaign, positionIndex, connection, onClose, onSucc
     if (!connected) { setVisible(true); return; }
     
     // Refresh state first
-    const provider = new AnchorProvider(connection, wallet, { commitment: "confirmed" });
+    const provider = new AnchorProvider(connection, anchorWallet, { commitment: "confirmed" });
     const freshAccount = await fetchCampaign(provider, campaign.pda);
     if (!freshAccount || freshAccount.positions[positionIndex].filled) {
       toast(`Position #${positionIndex < 10 ? '0' + positionIndex : positionIndex} was just taken`, "error");
@@ -298,7 +308,18 @@ function ParticipateModal({ campaign, positionIndex, connection, onClose, onSucc
       setDone(true); setDoneTx(txSig); setPolling(false);
       onSuccess(updated);
       toast(`✓ Position #${fmtPos(positionIndex)} secured! +${tokens.toLocaleString()} $${campaign.tokenSymbol}`, "success");
-    } catch(e) { toast(e.message, "error"); onClose(); }
+    } catch(e) {
+      console.error("[BCF] Participate error:", e);
+      const m = e.message || e.toString() || "";
+      if (/rejected|cancelled|canceled/i.test(m)) {
+        toast("Participation cancelled", "info");
+      } else if (m.includes("0x1")) {
+        toast("Insufficient funds for ticket + fees", "error");
+      } else {
+        toast(`Failed: ${m.slice(0, 80)}...`, "error");
+      }
+      onClose(); 
+    }
   }
 
   return (
@@ -407,8 +428,8 @@ function ParticipateModal({ campaign, positionIndex, connection, onClose, onSucc
 // ─── MAIN PAGE ────────────────────────────────────────────────────────────────
 export default function CampaignPage() {
   const { id }                             = useParams();
-  const wallet                             = useWallet();
-  const { connected, publicKey }           = wallet;
+  const { connected, publicKey }           = useWallet();
+  const anchorWallet                       = useAnchorWallet();
   const { connection }                     = useConnection();
   const { setVisible }                     = useWalletModal();
   const navigate                           = useNavigate();
@@ -428,12 +449,47 @@ export default function CampaignPage() {
 
   useEffect(() => {
     async function load() {
-      // Mock provider for read-only
-      const mockWallet = { publicKey: new PublicKey("11111111111111111111111111111111") };
-      const provider = new AnchorProvider(connection, mockWallet, { commitment: "confirmed" });
-      const account = await fetchCampaign(provider, id);
-      if (!account) { navigate("/explore"); return; }
-      setCampaign(campaignAccountToDisplay(id, account));
+      try {
+        const mockWallet = { publicKey: new PublicKey("11111111111111111111111111111111") };
+        const provider = new AnchorProvider(connection, mockWallet, { commitment: "confirmed" });
+        
+        // 1. Fetch Campaign (Primary Data)
+        const account = await fetchCampaign(provider, id);
+        if (!account) { navigate("/explore"); return; }
+        
+        const campaignDisplay = campaignAccountToDisplay(id, account);
+        setCampaign(campaignDisplay);
+
+        // 2. Fetch Project Identity (Secondary Data - Non-blocking)
+        try {
+          const project = await fetchProject(provider, account.creator.toBase58());
+          if (project) {
+            setToken({
+              mint: project.tokenMint.toBase58(),
+              symbol: project.resolvedSymbol,
+              name: project.resolvedName,
+              feeModeName: project.feeModeName,
+              treasury: {
+                balanceSOL: (project.treasuryLamports?.toNumber() || 0) / LAMPORTS_PER_SOL,
+              }
+            });
+          }
+        } catch (projErr) {
+          console.warn("[BCF] Project identity fetch skipped (rate limiting?):", projErr.message || projErr);
+          // Fallback minimal token info from campaign data
+          setToken({
+            mint: account.tokenMint.toBase58(),
+            symbol: "???",
+            name: "Bags Token"
+          });
+        }
+      } catch (e) {
+        console.error("[BCF] Critical error loading campaign:", e.message || e);
+        // If it's a 429, we might want to tell the user to wait
+        if (e.message?.includes("429")) {
+          toast("Rate limited by Solana RPC. Retrying in a moment...", "error");
+        }
+      }
     }
     load();
   }, [id, connection]);
@@ -467,7 +523,7 @@ export default function CampaignPage() {
     setSettling(true);
     toast("Finalizing draw on-chain...", "info");
     try {
-      const provider = new AnchorProvider(connection, wallet, { commitment: "confirmed" });
+      const provider = new AnchorProvider(connection, anchorWallet, { commitment: "confirmed" });
       const { tx, account } = await resolveCampaignOnChain(provider, { campaignPDA: campaign.pda });
       
       const updated = campaignAccountToDisplay(campaign.pda, account);
@@ -555,7 +611,7 @@ export default function CampaignPage() {
             <div style={{ display:"flex", alignItems:"center", gap:"8px", marginBottom:"12px", flexWrap:"wrap" }}>
               {statusBadge}
               <span className="badge badge-devnet">DevNet</span>
-              {campaign.tokenSymbol && <span className="badge badge-bags">${campaign.tokenSymbol}</span>}
+              {token?.symbol && <span className="badge badge-bags">${token.symbol}</span>}
             </div>
 
             <h1 style={{ fontSize:"2.1rem", fontWeight:700, letterSpacing:"-.04em", lineHeight:1.1, marginBottom:"14px" }}>{campaign.title}</h1>
@@ -666,7 +722,7 @@ export default function CampaignPage() {
                         {isSettled&&p.index===campaign.winningPosition && <span className="badge badge-active" style={{ fontSize:".64rem", padding:"2px 7px" }}>🏆 winner</span>}
                       </div>
                       <div style={{ display:"flex", alignItems:"center", gap:"10px" }}>
-                        <span style={{ fontFamily:"var(--mono)", fontSize:".78rem", color:"var(--accent)", fontWeight:700 }}>+{(p.tokensReceived||0).toLocaleString()} ${campaign.tokenSymbol}</span>
+                        <span style={{ fontFamily:"var(--mono)", fontSize:".78rem", color:"var(--accent)", fontWeight:700 }}>+{(p.tokensReceived||0).toLocaleString()} ${token?.symbol || "???"}</span>
                         {p.txSignature && <a href={explorerTx(p.txSignature)} target="_blank" rel="noopener noreferrer" style={{ fontSize:".68rem", color:"var(--text3)" }}>↗</a>}
                       </div>
                     </div>
