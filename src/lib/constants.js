@@ -1,17 +1,19 @@
-// ─── Price reference (DevNet demo — in production use Pyth oracle) ─────────────
-export const SOL_PRICE_USDC = 145; // 1 SOL ≈ $145 USDC
-export const toUSDC = (sol) => (Number(sol) * SOL_PRICE_USDC).toFixed(2);
+// ─── SOL price reference (DevNet demo — production use Pyth oracle) ──────────
+export const SOL_PRICE_USDC = 145; // 1 SOL ≈ $145 USDC (update as needed)
+export const toUSDC   = (sol)  => (Number(sol) * SOL_PRICE_USDC).toFixed(2);
 export const fromUSDC = (usdc) => (Number(usdc) / SOL_PRICE_USDC).toFixed(4);
 
 // ─── Treasury config ──────────────────────────────────────────────────────────
-// Each position purchase contributes this % to the project treasury
 export const TREASURY_FEE_PCT = 2; // 2% of each position sale → treasury
 
 // ─── Token economy ────────────────────────────────────────────────────────────
-// Fixed token distribution rate — never changes during a campaign
 export const TOKENS_PER_SOL = 1_000_000; // 1 SOL = 1M project tokens
 
-// ─── Bags fee modes — from docs.bags.fm/how-to-guides/customize-token-fees ───
+// ─── Bags fee modes ──────────────────────────────────────────────────────────
+// Source: docs.bags.fm/how-to-guides/customize-token-fees
+// These UUIDs are the real fee mode IDs from the Bags platform.
+// At runtime the app fetches live fee modes from /api/v1/token-launch/fee-modes;
+// these constants are the fallback if that request fails.
 export const FEE_MODES = [
   {
     id: 'fa29606e-5e48-4c37-827f-4b03d58ee23d',
@@ -27,6 +29,7 @@ export const FEE_MODES = [
     short: '0.25% → 1%',
     desc: '0.25% during bonding curve to attract early volume, then 1% after graduation with compounding.',
     creatorEarns: '~0.5% per trade',
+    recommended: false,
   },
   {
     id: 'a7c8e1f2-3d4b-5a6c-9e0f-1b2c3d4e5f6a',
@@ -34,6 +37,7 @@ export const FEE_MODES = [
     short: '1% → 0.25%',
     desc: '1% while on bonding curve for maximum early revenue, then lower 0.25% post-graduation.',
     creatorEarns: '~0.5% per trade',
+    recommended: false,
   },
   {
     id: '48e26d2f-0a9d-4625-a3cc-c3987d874b9e',
@@ -41,6 +45,7 @@ export const FEE_MODES = [
     short: '10% / 10%',
     desc: '10% on all trades. Maximum fee revenue with 50% compounding into pool post-graduation.',
     creatorEarns: '5% per trade',
+    recommended: false,
   },
 ];
 

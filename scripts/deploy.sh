@@ -1,7 +1,27 @@
 #!/usr/bin/env bash
 # BagsCreatorFund — Deploy to Solana DevNet
-# Tested on: WSL2 + Ubuntu + Solana CLI 2.x + Anchor 0.29.0
-# Run from project root: bash scripts/deploy.sh
+# ──────────────────────────────────────────────────────────────────────────────
+# ROOT CAUSE of "lock file version 4 requires -Znext-lockfile-bump":
+#
+#   System Rust 1.95  → writes Cargo.lock v4
+#   BPF toolchain Rust 1.75 → cannot PARSE v4
+#
+#   cargo-build-sbf delegates dependency resolution to whichever cargo is
+#   on the PATH first. That cargo (system Rust 1.95) writes v4. The BPF
+#   compiler then tries to read it and fails.
+#
+#   FIX (two-step):
+#   1. Run `cargo generate-lockfile` explicitly (system cargo, v4 output)
+#   2. Convert v4 → v3 with sed before cargo-build-sbf reads it
+#   3. cargo-build-sbf finds a COMPLETE v3 lock → reads it fine → compiles
+#
+#   Deleting Cargo.lock does NOT work: cargo-build-sbf regenerates it with
+#   system cargo → v4 again.
+#
+# OTHER FIXES:
+#   - Build in /tmp (ext4) → avoids NTFS "Permission denied" on /mnt/c/
+#   - Pass keypair FILE to `solana program deploy` → required for first deploy
+# ──────────────────────────────────────────────────────────────────────────────
 set -e
 
 export PATH="$HOME/.local/share/solana/install/active_release/bin:$HOME/.cargo/bin:$PATH"
@@ -12,342 +32,219 @@ echo -e "${CYAN}║   BagsCreatorFund — Deploy to DevNet     ║${NC}"
 echo -e "${CYAN}╚══════════════════════════════════════════╝${NC}"
 echo ""
 
-# ─── downgrade Cargo.lock v4 → v3 ─────────────────────────────────────────────
-downgrade_lockfile() {
-  if [ -f "Cargo.lock" ] && grep -q '^version = 4$' "Cargo.lock"; then
-    echo -e "  ${YELLOW}⚠ Cargo.lock v4 — downgrading to v3...${NC}"
-    sed -i 's/^version = 4$/version = 3/' "Cargo.lock"
-    echo -e "  ${GREEN}✓ Cargo.lock v3${NC}"
-  fi
+BUILD_DIR="/tmp/bcf-anchor-build"
+SBF_TARGET="/tmp/bcf-sbf-target"
+
+# ─── Convert Cargo.lock v4 → v3 ───────────────────────────────────────────────
+# Strips CRLF then forces version = 3.
+# Called AFTER cargo generate-lockfile so we don't fight cargo regenerating it.
+lockfile_v3() {
+  local f="${1:-Cargo.lock}"
+  [ -f "$f" ] || return 0
+  sed -i 's/\r//' "$f" 2>/dev/null || true
+  sed -i 's/^version = [0-9][0-9]*/version = 3/' "$f" 2>/dev/null || true
 }
 
-# ─── remove [patch.crates-io] block ───────────────────────────────────────────
-remove_patch_block() {
-  local toml="${1:-Cargo.toml}"
-  # Don't remove if it contains our manual BPF compat patch
-  if grep -q 'BPF compat:' "$toml" 2>/dev/null; then
-    echo -e "  ${CYAN}ℹ Keeping manual BPF compat patch in $(basename "$toml")${NC}"
-    return 0
-  fi
-  if grep -q 'Compatibility pins' "$toml" 2>/dev/null; then
-    sed -i '/^# ── Compatibility pins/,$d' "$toml"
-    echo -e "  ${GREEN}✓ Removed stale pins comment from $(basename "$toml")${NC}"
-  fi
-  if grep -qE '^\[patch\.' "$toml" 2>/dev/null; then
-    sed -i '/^\[patch\./,$d' "$toml"
-    echo -e "  ${GREEN}✓ Removed [patch.crates-io] from $(basename "$toml")${NC}"
-  fi
-}
-
-# ─── pin incompatible crates as [dependencies] ────────────────────────────────
-pin_crates_as_deps() {
-  local prog_toml="programs/bags-creator-fund/Cargo.toml"
-  if grep -q 'block-buffer.*0\.10' "$prog_toml" 2>/dev/null; then
-    echo -e "  ${GREEN}✓ Crate version pins already present${NC}"
-    return 0
-  fi
-  if grep -q '^\[dependencies\]' "$prog_toml"; then
-    sed -i '/^\[dependencies\]/a # BPF compat: Rust 1.75 cannot compile edition2024 crates\nblock-buffer = "=0.10.4"\ndigest = "=0.10.7"' "$prog_toml"
-  else
-    printf '\n# BPF compat: Rust 1.75 cannot compile edition2024 crates\n[dependencies]\nblock-buffer = "=0.10.4"\ndigest = "=0.10.7"\n' >> "$prog_toml"
-  fi
-  echo -e "  ${GREEN}✓ Version pins added to $(basename "$prog_toml")${NC}"
-}
-
-# ─── surgically remove edition2024 crates from Cargo.lock ────────────────────
-# When `cargo update --precise` can't downgrade across semver boundaries
-# (because some crate requires "digest = 0.11" explicitly), we edit the
-# lockfile directly: remove the incompatible [[package]] entries and rewrite
-# any dependency references to point to the compatible versions instead.
-# The BPF toolchain will then compile the compatible versions only.
-lockfile_surgery() {
-  if [ ! -f "Cargo.lock" ]; then
-    echo -e "  ${YELLOW}No Cargo.lock to patch${NC}"
-    return 1
-  fi
-
-  echo -e "  ${YELLOW}Performing Cargo.lock surgery to remove edition2024 crates...${NC}"
-
-  python3 << 'PYEOF'
-import re, sys
-
-with open("Cargo.lock") as f:
-    content = f.read()
-
-original = content
-
-# Split on package boundaries
-# Each [[package]] entry ends just before the next [[package]] or EOF
+# Remove edition2024 crates (block-buffer ≥0.11, digest ≥0.11) from lock
+clean_lockfile() {
+  [ -f "Cargo.lock" ] || return 0
+  python3 - << 'PYEOF'
+import re
+with open("Cargo.lock") as f: content = f.read()
 parts = re.split(r'(?=^\[\[package\]\])', content, flags=re.MULTILINE)
-header = parts[0]
-packages = parts[1:]
-
-def is_incompatible(pkg):
-    """Return True for block-buffer >=0.11 and digest >=0.11 packages."""
-    if re.search(r'name\s*=\s*"block-buffer"', pkg):
-        m = re.search(r'version\s*=\s*"(\d+)\.(\d+)', pkg)
-        if m and (int(m.group(1)) > 0 or int(m.group(2)) >= 11):
-            return True
-    if re.search(r'name\s*=\s*"digest"', pkg):
-        m = re.search(r'version\s*=\s*"(\d+)\.(\d+)', pkg)
-        if m and (int(m.group(1)) > 0 or int(m.group(2)) >= 11):
-            return True
+header, pkgs = parts[0], parts[1:]
+def bad(p):
+    for name in ["block-buffer","digest"]:
+        if re.search(rf'name\s*=\s*"{name}"', p):
+            m = re.search(r'version\s*=\s*"(\d+)\.(\d+)', p)
+            if m and (int(m.group(1)) > 0 or int(m.group(2)) >= 11): return True
     return False
-
-removed = [p for p in packages if is_incompatible(p)]
-kept    = [p for p in packages if not is_incompatible(p)]
-
-if not removed:
-    print("  Nothing to remove — no incompatible packages found")
-    sys.exit(0)
-
-for r in removed:
-    m = re.search(r'name\s*=\s*"([^"]+)".*?version\s*=\s*"([^"]+)"', r, re.DOTALL)
-    if m:
-        print(f"  Removing: {m.group(1)} v{m.group(2)}")
-
-# Rebuild lockfile without incompatible packages
+kept = [p for p in pkgs if not bad(p)]
 result = header + "".join(kept)
-
-# Rewrite dependency references that pointed to the removed versions:
-# "block-buffer 0.12.x ..." → "block-buffer 0.10.4 ..."
-# "digest 0.11.x ..."       → "digest 0.10.7 ..."
 result = re.sub(r'"block-buffer 0\.1[1-9][^"]*"', '"block-buffer 0.10.4"', result)
 result = re.sub(r'"digest 0\.1[1-9][^"]*"',       '"digest 0.10.7"',       result)
-
-with open("Cargo.lock", "w") as f:
-    f.write(result)
-
-changed = result != original
-print(f"  Cargo.lock patched ({'changed' if changed else 'no changes needed'})")
+with open("Cargo.lock","w") as f: f.write(result)
 PYEOF
 }
 
-# ─── prepare a BPF-compatible Cargo.lock ──────────────────────────────────────
-prepare_lockfile() {
-  echo "  Using existing Cargo.lock with manual pins..."
-  downgrade_lockfile
-
-  # Try pinning each incompatible version using the @version syntax
-  # (requires Cargo ≥1.78 — we have 1.95)
-  local pinned=0
-  echo "  Pinning block-buffer@0.12.x → 0.10.4..."
-  if cargo update "block-buffer@0.12.0" --precise 0.10.4 2>&1; then
-    echo -e "  ${GREEN}✓ block-buffer pinned${NC}"; pinned=1
-  else
-    echo -e "  ${YELLOW}  cargo update failed (semver conflict) — will use lockfile surgery${NC}"
-  fi
-
-  echo "  Pinning digest@0.11.x → 0.10.7..."
-  if cargo update "digest@0.11.2" --precise 0.10.7 2>&1; then
-    echo -e "  ${GREEN}✓ digest pinned${NC}"; pinned=1
-  else
-    echo -e "  ${YELLOW}  cargo update failed (semver conflict) — will use lockfile surgery${NC}"
-  fi
-
-  # If cargo update couldn't pin everything, fall back to direct lockfile editing
-  if cargo tree 2>/dev/null | grep -qE 'block-buffer v0\.1[1-9]|digest v0\.1[1-9]'; then
-    echo "  Incompatible crates still present — applying lockfile surgery..."
-    lockfile_surgery
-  fi
-
-  downgrade_lockfile
-  echo -e "  ${GREEN}✓ Cargo.lock prepared${NC}"
-}
-
-# ─── anchor build with lockfile fix on retry ──────────────────────────────────
-try_anchor_build() {
-  echo "  Running: anchor build (with lockfile fix and temp target)"
-  sed -i 's/version = 4/version = 3/' Cargo.lock
-  if CARGO_TARGET_DIR=/tmp/target anchor build 2>&1; then
-    mkdir -p target/deploy target/idl
-    cp /tmp/target/deploy/*.so target/deploy/ 2>/dev/null || true
-    cp /tmp/target/deploy/*.json target/deploy/ 2>/dev/null || true
-    cp /tmp/target/idl/*.json target/idl/ 2>/dev/null || true
-    return 0
-  fi
-  return 1
-}
-
-# ─── cargo-build-sbf fallback ─────────────────────────────────────────────────
-try_cargo_sbf() {
-  echo -e "  ${YELLOW}anchor build failed — falling back to cargo-build-sbf...${NC}"
-  downgrade_lockfile
-  pushd programs/bags-creator-fund > /dev/null
-  if cargo-build-sbf 2>&1; then
-    popd > /dev/null; return 0
-  fi
-  popd > /dev/null
-  return 1
-}
-
 # ══════════════════════════════════════════════════════════════════════════════
-
 echo -e "${YELLOW}[1/6] Checking tools...${NC}"
-if ! command -v solana &>/dev/null; then
-  echo -e "${RED}✗ solana CLI not found${NC}"
-  echo "  Install: sh -c \"\$(wget -qO- https://release.solana.com/v1.18.26/install)\""
-  exit 1
-fi
-if ! command -v anchor &>/dev/null; then
-  echo -e "${RED}✗ anchor not found${NC}"
-  echo "  cargo install --git https://github.com/coral-xyz/anchor avm --locked --force"
-  echo "  avm install 0.29.0 && avm use 0.29.0"
-  exit 1
-fi
+for tool in solana cargo-build-sbf; do
+  command -v $tool &>/dev/null || { echo -e "${RED}✗ $tool not found${NC}"; exit 1; }
+done
 echo -e "${GREEN}✓ $(solana --version | head -n1)${NC}"
-echo -e "${GREEN}✓ $(anchor --version)${NC}"
+echo -e "${GREEN}✓ cargo-build-sbf available${NC}"
 
 echo ""
 echo -e "${YELLOW}[2/6] Configuring Solana for DevNet...${NC}"
 solana config set --url devnet --commitment confirmed
-if [ ! -f "$HOME/.config/solana/id.json" ]; then
+[ ! -f "$HOME/.config/solana/id.json" ] && \
   solana-keygen new --no-passphrase --outfile "$HOME/.config/solana/id.json"
-  echo -e "${YELLOW}⚠ Save your seed phrase!${NC}"
-fi
-WALLET=$(solana address)
-echo -e "${GREEN}✓ Wallet: $WALLET${NC}"
+echo -e "${GREEN}✓ Wallet: $(solana address)${NC}"
 
 echo ""
 echo -e "${YELLOW}[3/6] Checking SOL balance...${NC}"
 BALANCE_SOL=$(solana balance 2>/dev/null | awk '{print $1}')
 echo "Current balance: ${BALANCE_SOL} SOL"
-NEEDS_AIRDROP=$(python3 -c "print('yes' if float('${BALANCE_SOL:-0}') < 3.0 else 'no')" 2>/dev/null || echo "yes")
-if [ "$NEEDS_AIRDROP" = "yes" ]; then
-  solana airdrop 2 && sleep 2
-  solana airdrop 2 && sleep 2
+if python3 -c "import sys; sys.exit(0 if float('${BALANCE_SOL:-0}') >= 3.0 else 1)" 2>/dev/null; then
+  echo -e "${GREEN}✓ Sufficient${NC}"
+else
+  echo -e "${YELLOW}Requesting airdrops...${NC}"
+  solana airdrop 2 && sleep 3; solana airdrop 2 && sleep 3
 fi
 echo -e "${GREEN}✓ Balance: $(solana balance 2>/dev/null)${NC}"
-echo ""
 
-echo -e "${GREEN}✓ Balance: $(solana balance 2>/dev/null)${NC}"
-
+# ─── Copy workspace to Linux filesystem ────────────────────────────────────────
 echo ""
-echo -e "${YELLOW}[4/6] Building Anchor program...${NC}"
+echo -e "${YELLOW}[4/6] Building program on Linux filesystem...${NC}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 ANCHOR_DIR="$PROJECT_ROOT/anchor"
-cd "$ANCHOR_DIR"
-echo "Working directory: $(pwd)"
+echo "  Project root : $PROJECT_ROOT"
+echo "  Build dir    : $BUILD_DIR"
 
-if grep -q 'members = \["programs/\*"\]' Anchor.toml 2>/dev/null; then
-  echo "  Fixing Anchor.toml workspace members path..."
-  sed -i 's|members = \["programs/\*"\]|members = \["programs/bags-creator-fund"\]|' Anchor.toml
-fi
+echo "  Copying workspace..."
+rm -rf "$BUILD_DIR" "$SBF_TARGET"
+cp -r "$ANCHOR_DIR" "$BUILD_DIR"
+cd "$BUILD_DIR"
 
-echo "  Manual BPF stabilization already applied. Skipping cleanup."
-# remove_patch_block "Cargo.toml"
-# remove_patch_block "programs/bags-creator-fund/Cargo.toml"
-
-echo "  Checking crate version pins..."
-pin_crates_as_deps
-
-echo "  Cleaning target/ and Cargo.lock..."
+# Fix Anchor.toml workspace path if needed
+grep -q 'members = \["programs/\*"\]' Anchor.toml 2>/dev/null && \
+  sed -i 's|members = \["programs/\*"\]|members = ["programs/bags-creator-fund"]|' Anchor.toml
 rm -rf target
-# rm -f Cargo.lock
+echo -e "  ${GREEN}✓ Workspace copied${NC}"
 
+# ─── Step 1: use system cargo to resolve deps (writes v4 lock) ────────────────
+echo "  Resolving dependencies with system cargo..."
+cargo generate-lockfile 2>&1 | grep -v "^$" | tail -3 || true
+
+# ─── Step 2: convert v4 → v3 so BPF toolchain can parse it ───────────────────
+lockfile_v3 "Cargo.lock"
+clean_lockfile
+echo -e "  ${GREEN}✓ Cargo.lock prepared (v4 → v3, BPF-compatible)${NC}"
+
+# ─── Step 3: build with cargo-build-sbf (reads the v3 lock, no regeneration) ──
 echo ""
-echo "  Using manually stabilized Cargo.lock..."
-# prepare_lockfile
+echo "  Building with cargo-build-sbf..."
+cd "$BUILD_DIR/programs/bags-creator-fund"
+if CARGO_TARGET_DIR="$SBF_TARGET" cargo-build-sbf 2>&1 | \
+    grep -v "^warning: Patch" | grep -v "^Patch \`" | \
+    grep -v "was not used in the crate graph" | \
+    grep -v "^Check that the patched" | \
+    grep -v "^with the dependency" | \
+    grep -v "^run \`cargo update" | \
+    grep -v "^This may also occur"; then
+  echo -e "  ${GREEN}✓ Build complete${NC}"
+else
+  echo -e "${RED}✗ cargo-build-sbf failed${NC}"; exit 1
+fi
+cd "$BUILD_DIR"
 
+# Locate .so
+FINAL_SO=""
+for src in \
+  "$SBF_TARGET/deploy/bags_creator_fund.so" \
+  "$SBF_TARGET/bpfel-unknown-unknown/release/bags_creator_fund.so" \
+  "$BUILD_DIR/target/deploy/bags_creator_fund.so"; do
+  [ -f "$src" ] && FINAL_SO="$src" && break
+done
+[ -z "$FINAL_SO" ] && echo -e "${RED}✗ .so not found${NC}" && exit 1
+echo -e "  ${GREEN}✓ .so: $(du -sh "$FINAL_SO" | cut -f1)${NC}"
+echo -e "${GREEN}✓ Build successful${NC}"
+
+# ─── Keypair ──────────────────────────────────────────────────────────────────
 echo ""
-echo "Building Anchor program (this may take 2–3 minutes)..."
-if ! try_anchor_build; then
-  if ! try_cargo_sbf; then
-    echo -e "${RED}✗ All build attempts failed.${NC}"
-    echo ""
-    echo -e "${YELLOW}Diagnostics — crates requiring incompatible versions:${NC}"
-    cargo tree -i "block-buffer@0.12.0" 2>/dev/null | head -20 || true
-    cargo tree -i "digest@0.11.2" 2>/dev/null | head -20 || true
-    exit 1
-  fi
-fi
-echo -e "${GREEN}✓ Build complete${NC}"
+echo -e "${YELLOW}[5/6] Resolving program keypair...${NC}"
+KEYPAIR_FILE=""
+for kp in \
+  "$ANCHOR_DIR/target/deploy/bags_creator_fund-keypair.json" \
+  "$SBF_TARGET/deploy/bags_creator_fund-keypair.json" \
+  "$BUILD_DIR/target/deploy/bags_creator_fund-keypair.json"; do
+  [ -f "$kp" ] && KEYPAIR_FILE="$kp" && break
+done
 
-echo ""
-echo -e "${YELLOW}[5/6] Getting Program ID...${NC}"
-KEYPAIR_FILE="$ANCHOR_DIR/target/deploy/bags_creator_fund-keypair.json"
-if [ ! -f "$KEYPAIR_FILE" ]; then
-  echo -e "${RED}✗ Keypair not found: $KEYPAIR_FILE${NC}"; exit 1
+if [ -z "$KEYPAIR_FILE" ]; then
+  mkdir -p "$ANCHOR_DIR/target/deploy"
+  KEYPAIR_FILE="$ANCHOR_DIR/target/deploy/bags_creator_fund-keypair.json"
+  solana-keygen new --no-passphrase --outfile "$KEYPAIR_FILE" --force
+  echo -e "  ${GREEN}✓ Generated new program keypair${NC}"
+else
+  echo -e "  ${GREEN}✓ Keypair: $KEYPAIR_FILE${NC}"
+  [ "$KEYPAIR_FILE" != "$ANCHOR_DIR/target/deploy/bags_creator_fund-keypair.json" ] && {
+    mkdir -p "$ANCHOR_DIR/target/deploy"
+    cp "$KEYPAIR_FILE" "$ANCHOR_DIR/target/deploy/bags_creator_fund-keypair.json"
+  }
 fi
-PROGRAM_ID=$(python3 << 'PYEOF'
-import json
-with open("target/deploy/bags_creator_fund-keypair.json") as f:
-    b = bytes(json.load(f))
-pub = b[32:]
-a = b'123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'
-n = int.from_bytes(pub, 'big')
-r = []
-while n: n, x = divmod(n, 58); r.append(a[x:x+1])
-for c in pub:
-    if c == 0: r.append(a[0:1])
-    else: break
-print(b''.join(reversed(r)).decode())
-PYEOF
-)
-if [ -z "$PROGRAM_ID" ]; then
-  PROGRAM_ID=$(anchor keys list 2>/dev/null | grep "bags_creator_fund" | awk '{print $NF}')
-fi
-if [ -z "$PROGRAM_ID" ]; then
-  echo -e "${RED}✗ Could not determine Program ID. Run: anchor keys list${NC}"; exit 1
-fi
-echo -e "${GREEN}✓ Program ID: $PROGRAM_ID${NC}"
 
-sed -i "s/declare_id!(\"[^\"]*\")/declare_id!(\"$PROGRAM_ID\")/" \
-  "$ANCHOR_DIR/programs/bags-creator-fund/src/lib.rs"
-sed -i "s/bags-creator-fund = \"[^\"]*\"/bags-creator-fund = \"$PROGRAM_ID\"/" \
-  "$ANCHOR_DIR/Anchor.toml"
-sed -i "s/new PublicKey('[^']*')/new PublicKey('$PROGRAM_ID')/" \
+PROGRAM_ID=$(solana-keygen pubkey "$KEYPAIR_FILE")
+echo -e "  ${GREEN}✓ Program ID: $PROGRAM_ID${NC}"
+
+# Patch Program ID into all source files
+echo "  Patching Program ID..."
+for f in \
+  "$BUILD_DIR/programs/bags-creator-fund/src/lib.rs" \
+  "$ANCHOR_DIR/programs/bags-creator-fund/src/lib.rs"; do
+  [ -f "$f" ] && sed -i "s/declare_id!(\"[^\"]*\")/declare_id!(\"$PROGRAM_ID\")/" "$f"
+done
+for f in "$BUILD_DIR/Anchor.toml" "$ANCHOR_DIR/Anchor.toml"; do
+  [ -f "$f" ] && sed -i "s/bags-creator-fund = \"[^\"]*\"/bags-creator-fund = \"$PROGRAM_ID\"/" "$f"
+done
+[ -f "$PROJECT_ROOT/src/lib/programClient.js" ] && sed -i \
+  -e "s/new PublicKey('[^']*')/new PublicKey('$PROGRAM_ID')/" \
+  -e "s/new PublicKey(\"[^\"]*\")/new PublicKey(\"$PROGRAM_ID\")/" \
   "$PROJECT_ROOT/src/lib/programClient.js"
-cp "$ANCHOR_DIR/target/idl/bags_creator_fund.json" "$PROJECT_ROOT/src/lib/idl.json"
 python3 << PYEOF
 import json, os
-path = '$PROJECT_ROOT/src/lib/idl.json'
-if os.path.exists(path):
-    with open(path, 'r') as f:
-        idl = json.load(f)
-    idl['metadata'] = idl.get('metadata', {})
-    idl['metadata']['address'] = '$PROGRAM_ID'
-    with open(path, 'w') as f:
-        json.dump(idl, f, indent=2)
-    print('  idl.json updated and synchronized ✓')
-else:
-    print('  idl.json not found, skipping...')
+p = "$PROJECT_ROOT/src/lib/idl.json"
+if os.path.exists(p):
+    with open(p) as f: idl = json.load(f)
+    idl.setdefault("metadata", {})["address"] = "$PROGRAM_ID"
+    with open(p, "w") as f: json.dump(idl, f, indent=2)
+    print(f"  idl.json → $PROGRAM_ID")
 PYEOF
 
-echo "  Final rebuild with embedded Program ID..."
-if ! try_anchor_build; then
-  echo -e "${RED}✗ Final rebuild failed.${NC}"; exit 1
-fi
-echo -e "${GREEN}✓ All files patched and rebuilt${NC}"
+# Final rebuild with patched Program ID
+echo "  Final rebuild with patched Program ID..."
+cargo generate-lockfile 2>/dev/null || true
+lockfile_v3 "Cargo.lock"
+cd "$BUILD_DIR/programs/bags-creator-fund"
+CARGO_TARGET_DIR="$SBF_TARGET" cargo-build-sbf 2>&1 | \
+  grep -E "^(   Compiling|    Finished|^error\[E)" || true
+cd "$BUILD_DIR"
 
+# Final .so
+FINAL_SO=""
+for src in \
+  "$SBF_TARGET/deploy/bags_creator_fund.so" \
+  "$SBF_TARGET/bpfel-unknown-unknown/release/bags_creator_fund.so" \
+  "$BUILD_DIR/target/deploy/bags_creator_fund.so"; do
+  [ -f "$src" ] && FINAL_SO="$src" && break
+done
+[ -z "$FINAL_SO" ] && echo -e "${RED}✗ Final .so not found${NC}" && exit 1
+mkdir -p "$ANCHOR_DIR/target/deploy"
+cp "$FINAL_SO" "$ANCHOR_DIR/target/deploy/bags_creator_fund.so"
+echo -e "  ${GREEN}✓ .so ready: $(du -sh "$FINAL_SO" | cut -f1)${NC}"
+
+# ─── Deploy ───────────────────────────────────────────────────────────────────
 echo ""
 echo -e "${YELLOW}[6/6] Deploying to Solana DevNet...${NC}"
-echo "  Deploying with priority fees to bypass congestion..."
-# Use priority fees and multiple attempts
+echo "  Program ID : $PROGRAM_ID"
+echo ""
 MAX_RETRIES=5
 for i in $(seq 1 $MAX_RETRIES); do
-  echo "  Attempt $i of $MAX_RETRIES..."
-  
-  # Ensure we have a clean slate for each attempt (recovers SOL from failed attempts)
+  echo "  Attempt $i / $MAX_RETRIES..."
   solana program close --buffers --quiet 2>/dev/null || true
-  
   if solana program deploy \
-    --program-id "$PROGRAM_ID" \
-    --keypair "$HOME/.config/solana/id.json" \
-    --commitment confirmed \
-    --with-compute-unit-price 50000 \
-    "target/deploy/bags_creator_fund.so"; then
+      --program-id "$KEYPAIR_FILE" \
+      --keypair    "$HOME/.config/solana/id.json" \
+      --commitment  confirmed \
+      --with-compute-unit-price 50000 \
+      "$FINAL_SO"; then
     echo -e "${GREEN}✓ Deployment successful!${NC}"
     break
   else
-    if [ $i -eq $MAX_RETRIES ]; then
-      echo -e "${RED}✗ Deployment failed after $MAX_RETRIES attempts.${NC}"
-      echo -e "${YELLOW}Tip: You can manually resume with: solana program deploy --buffer <BUFFER> --program-id $PROGRAM_ID${NC}"
-      exit 1
-    fi
-    echo -e "${YELLOW}  Deployment interrupted (congested). Retrying in 5s...${NC}"
-    sleep 5
+    [ $i -eq $MAX_RETRIES ] && { echo -e "${RED}✗ Deployment failed.${NC}"; exit 1; }
+    echo -e "${YELLOW}  Retrying in 5s...${NC}"; sleep 5
   fi
 done
 
@@ -358,18 +255,9 @@ echo -e "${GREEN}╚════════════════════
 echo ""
 echo -e "  Program ID : ${CYAN}$PROGRAM_ID${NC}"
 echo -e "  Explorer   : ${CYAN}https://explorer.solana.com/address/$PROGRAM_ID?cluster=devnet${NC}"
-echo -e "${YELLOW}Next steps:${NC}"
-echo -e "  The script will now attempt to install dependencies and launch the frontend..."
 echo ""
-
-# Go back to project root and launch
+echo -e "${YELLOW}Launching frontend...${NC}"
 cd "$PROJECT_ROOT"
-if npm install; then
-  echo -e "${GREEN}✓ Dependencies installed${NC}"
-  echo -e "${CYAN}Launching frontend (npm run dev)...${NC}"
-  npm run dev
-else
-  echo -e "${RED}✗ npm install failed. Please run 'npm install && npm run dev' manually in Windows or WSL.${NC}"
-fi
-
-echo ""
+npm install --legacy-peer-deps --engine-strict=false 2>&1 | \
+  grep -E "^(added|removed|changed|audited|npm ERR)" || true
+npm run dev

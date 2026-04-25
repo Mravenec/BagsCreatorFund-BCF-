@@ -1,9 +1,40 @@
-// Bags API — docs.bags.fm
+/**
+ * bags.js — Bags API v2 integration (corrected)
+ * docs.bags.fm | public-api-v2.bags.fm/api/v1
+ *
+ * Token Launch v2 FLOW (4 steps):
+ *   1. POST /token-launch/create-token-info  (FormData, NOT JSON)
+ *      → { tokenMint, tokenLaunch: { uri } }
+ *
+ *   2. POST /fee-share/config                (JSON, required by v2)
+ *      → { meteoraConfigKey, needsCreation, transactions }
+ *      If needsCreation=true → wallet signs + sends those TXs first
+ *
+ *   3. POST /token-launch/create-launch-transaction  (JSON, new fields)
+ *      → base58-encoded VersionedTransaction
+ *
+ *   4. Wallet signs → send to Mainnet
+ */
+
+import {
+  Connection,
+  VersionedTransaction,
+  Transaction,
+} from '@solana/web3.js';
+
 const BASE = import.meta.env.VITE_BAGS_API_BASE || 'https://public-api-v2.bags.fm/api/v1';
 const KEY  = import.meta.env.VITE_BAGS_API_KEY;
-const H    = () => ({ 'Content-Type': 'application/json', 'x-api-key': KEY });
 
-// Health check
+// Bags tokens live on Mainnet (Meteora DBC)
+const MAINNET_RPC = 'https://api.mainnet-beta.solana.com';
+export const mainnetConnection = new Connection(MAINNET_RPC, 'confirmed');
+
+// Auth header (no Content-Type — let fetch set it for FormData)
+const authHeader = () => ({ 'x-api-key': KEY });
+// Auth + JSON header
+const jsonHeader = () => ({ 'Content-Type': 'application/json', 'x-api-key': KEY });
+
+// ─── Health check ─────────────────────────────────────────────────────────────
 export async function pingBags() {
   try {
     const r = await fetch('https://public-api-v2.bags.fm/ping');
@@ -11,54 +42,273 @@ export async function pingBags() {
   } catch { return false; }
 }
 
-// Create token metadata — step 1 of Bags token launch flow
-// POST /token-launch/create-token-info
-export async function createBagsTokenInfo({ name, symbol, description, imageUrl = '' }) {
+// ─── Parse API error cleanly ──────────────────────────────────────────────────
+async function parseError(r) {
+  try {
+    const d = await r.json();
+    // Try various error field names
+    return d?.message || d?.error || d?.reason || JSON.stringify(d);
+  } catch {
+    return `HTTP ${r.status}`;
+  }
+}
+
+// ─── STEP 1: Register token metadata on Bags ─────────────────────────────────
+// API requires multipart/form-data (NOT application/json)
+// Returns: { tokenMint, metadataUri (tokenLaunch.uri) }
+export async function createBagsTokenInfo({
+  name, symbol, description, imageUrl = '',
+  twitter = '', telegram = '', website = '',
+}) {
+  const form = new FormData();
+  form.append('name',        name.slice(0, 32));
+  form.append('symbol',      symbol.toUpperCase().replace('$', '').slice(0, 10));
+  form.append('description', description.slice(0, 1000));
+  // Include image either as URL or omit if empty
+  if (imageUrl) form.append('imageUrl', imageUrl);
+  if (twitter)  form.append('twitter',  twitter);
+  if (telegram) form.append('telegram', telegram);
+  if (website)  form.append('website',  website);
+
   const r = await fetch(`${BASE}/token-launch/create-token-info`, {
-    method: 'POST', headers: H(),
-    body: JSON.stringify({
-      name, symbol, description,
-      image: imageUrl,
-      twitter: '', telegram: '', website: '',
-    }),
+    method: 'POST',
+    headers: authHeader(), // DO NOT set Content-Type — browser sets boundary automatically
+    body: form,
   });
-  const data = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(data?.message || `Bags API error ${r.status}`);
-  return data; // { metadataUri, mint?, ... }
+
+  if (!r.ok) {
+    const msg = await parseError(r);
+    throw new Error(`Bags API error ${r.status}: ${msg}`);
+  }
+
+  const data = await r.json();
+  // v2 response: { success, response: { tokenMint, tokenMetadata, tokenLaunch: { uri, ... } } }
+  const resp = data?.response;
+  const tokenMint  = resp?.tokenMint;
+  const metadataUri = resp?.tokenLaunch?.uri || resp?.tokenMetadata;
+  if (!tokenMint) throw new Error('Bags API did not return tokenMint');
+  if (!metadataUri) throw new Error('Bags API did not return metadataUri');
+
+  return { tokenMint, metadataUri };
 }
 
-/**
- * Step 2: Get the actual launch transaction from Bags
- * POST /token-launch/create-launch-transaction
- */
-export async function createBagsLaunchTransaction({ metadataUri, creator, feeModeId }) {
+// ─── STEP 2: Create fee share config (required in v2) ────────────────────────
+// Returns: { meteoraConfigKey, needsCreation, transactions, bundles }
+export async function createBagsFeeShareConfig({
+  payer,      // creator wallet pubkey string
+  baseMint,   // tokenMint from step 1
+  bagsConfigType = 'fa29606e-5e48-4c37-827f-4b03d58ee23d', // Standard 2%
+}) {
+  const r = await fetch(`${BASE}/fee-share/config`, {
+    method: 'POST',
+    headers: jsonHeader(),
+    body: JSON.stringify({
+      payer,
+      baseMint,
+      claimersArray:     [payer],   // creator gets 100% of fees
+      basisPointsArray:  [10000],   // 100% in basis points
+      bagsConfigType,
+    }),
+  });
+
+  if (!r.ok) {
+    const msg = await parseError(r);
+    throw new Error(`Bags fee-share/config error ${r.status}: ${msg}`);
+  }
+
+  const data = await r.json();
+  const resp = data?.response;
+  return {
+    meteoraConfigKey: resp?.meteoraConfigKey,
+    needsCreation:    resp?.needsCreation ?? true,
+    transactions:     resp?.transactions || [],  // array of { blockhash, transaction }
+    bundles:          resp?.bundles || [],        // array of arrays
+  };
+}
+
+// ─── STEP 2b: Sign and send fee share config transactions ─────────────────────
+// Only needed when needsCreation = true
+export async function sendFeeShareConfigTxs(wallet, feeShareResult) {
+  const allTxs = [
+    ...feeShareResult.transactions,
+    ...(feeShareResult.bundles?.flat() || []),
+  ];
+
+  for (const txObj of allTxs) {
+    const txBytes = Buffer.from(txObj.transaction, 'base64');
+    let tx;
+    try {
+      tx = VersionedTransaction.deserialize(txBytes);
+    } catch {
+      tx = Transaction.from(txBytes);
+    }
+
+    // Update blockhash if needed
+    if (txObj.blockhash?.blockhash) {
+      if (tx instanceof VersionedTransaction) {
+        tx.message.recentBlockhash = txObj.blockhash.blockhash;
+      } else {
+        tx.recentBlockhash = txObj.blockhash.blockhash;
+      }
+    }
+
+    const signed = tx instanceof VersionedTransaction
+      ? await wallet.signTransaction(tx)
+      : await wallet.signTransaction(tx);
+
+    const sig = await mainnetConnection.sendRawTransaction(signed.serialize(), {
+      skipPreflight: false,
+      maxRetries: 5,
+    });
+    await mainnetConnection.confirmTransaction({
+      signature: sig,
+      blockhash: txObj.blockhash?.blockhash,
+      lastValidBlockHeight: txObj.blockhash?.lastValidBlockHeight,
+    }, 'confirmed');
+  }
+}
+
+// ─── STEP 3: Create token launch transaction ──────────────────────────────────
+// Returns the signed base58-encoded VersionedTransaction from Bags API
+export async function createBagsLaunchTransaction({
+  metadataUri,   // IPFS URI from step 1
+  tokenMint,     // mint from step 1
+  creator,       // wallet pubkey (PublicKey or string)
+  meteoraConfigKey, // from step 2
+  initialBuyLamports = 0, // optional initial buy
+}) {
   const r = await fetch(`${BASE}/token-launch/create-launch-transaction`, {
-    method: 'POST', headers: H(),
+    method: 'POST',
+    headers: jsonHeader(),
     body: JSON.stringify({
-      metadataUri,
-      creator: creator.toString(),
-      feeMode: feeModeId,
+      ipfs:               metadataUri,
+      tokenMint:          tokenMint,
+      wallet:             creator.toString(),
+      initialBuyLamports: initialBuyLamports,
+      configKey:          meteoraConfigKey,
     }),
   });
-  const data = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(data?.message || `Bags API error ${r.status}`);
-  return data; // { transaction, mint }
+
+  if (!r.ok) {
+    const msg = await parseError(r);
+    throw new Error(`Bags launch-transaction error ${r.status}: ${msg}`);
+  }
+
+  const data = await r.json();
+  // v2 response: { success, response: "<base58 encoded serialized TX>" }
+  const txBase58 = data?.response;
+  if (!txBase58 || typeof txBase58 !== 'string') {
+    throw new Error('Bags API did not return a transaction');
+  }
+  return { transaction: txBase58, mint: tokenMint };
 }
 
-// Get token info by mint
+// ─── STEP 4: Sign and send the launch TX to Mainnet ──────────────────────────
+export async function executeBagsLaunchTransaction(wallet, txBase58) {
+  if (!wallet?.signTransaction) throw new Error('Wallet does not support signTransaction');
+
+  // v2 returns base58 VersionedTransaction
+  let tx;
+  try {
+    const bs58 = await import('bs58').then(m => m.default || m);
+    const txBytes = bs58.decode(txBase58);
+    tx = VersionedTransaction.deserialize(txBytes);
+  } catch {
+    // Fallback: try base64 legacy TX (v1 compat)
+    try {
+      tx = Transaction.from(Buffer.from(txBase58, 'base64'));
+    } catch {
+      throw new Error('Could not decode Bags launch transaction');
+    }
+  }
+
+  const { blockhash, lastValidBlockHeight } = await mainnetConnection.getLatestBlockhash('finalized');
+  if (tx instanceof VersionedTransaction) {
+    tx.message.recentBlockhash = blockhash;
+  } else {
+    tx.recentBlockhash = blockhash;
+    tx.feePayer = wallet.publicKey;
+  }
+
+  const signedTx = await wallet.signTransaction(tx);
+  const sig = await mainnetConnection.sendRawTransaction(signedTx.serialize(), {
+    skipPreflight: false,
+    preflightCommitment: 'confirmed',
+    maxRetries: 5,
+  });
+  await mainnetConnection.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, 'confirmed');
+  return sig;
+}
+
+// ─── Combined: complete 4-step token launch ───────────────────────────────────
+export async function launchBagsToken(wallet, {
+  name, symbol, description, imageUrl = '',
+  twitter = '', telegram = '', website = '',
+  bagsConfigType = 'fa29606e-5e48-4c37-827f-4b03d58ee23d',
+  initialBuyLamports = 0,
+}) {
+  const creatorStr = wallet.publicKey.toString();
+
+  // Step 1: metadata
+  const { tokenMint, metadataUri } = await createBagsTokenInfo({
+    name, symbol, description, imageUrl, twitter, telegram, website,
+  });
+
+  // Step 2: fee share config
+  const feeShareResult = await createBagsFeeShareConfig({
+    payer: creatorStr,
+    baseMint: tokenMint,
+    bagsConfigType,
+  });
+
+  // Step 2b: sign fee share config TXs (only if new config needed)
+  if (feeShareResult.needsCreation &&
+      (feeShareResult.transactions.length > 0 || feeShareResult.bundles.length > 0)) {
+    await sendFeeShareConfigTxs(wallet, feeShareResult);
+  }
+
+  const meteoraConfigKey = feeShareResult.meteoraConfigKey;
+  if (!meteoraConfigKey) throw new Error('Bags API did not return meteoraConfigKey');
+
+  // Step 3: create launch TX
+  const { transaction, mint } = await createBagsLaunchTransaction({
+    metadataUri,
+    tokenMint,
+    creator: creatorStr,
+    meteoraConfigKey,
+    initialBuyLamports,
+  });
+
+  // Step 4: sign + broadcast
+  const signature = await executeBagsLaunchTransaction(wallet, transaction);
+  markMintAsReal(mint);
+  return { mint, signature, metadataUri };
+}
+
+// ─── Read helpers ─────────────────────────────────────────────────────────────
 export async function getBagsToken(mint) {
-  const r = await fetch(`${BASE}/token/${mint}`, { headers: H() });
-  if (!r.ok) return null;
-  return r.json();
+  try {
+    const r = await fetch(`${BASE}/token/${mint}`, { headers: authHeader() });
+    if (!r.ok) return null;
+    const d = await r.json();
+    return d?.response || d;
+  } catch { return null; }
 }
 
-// Get token trading fees earned
-export async function getTokenFees(mint, wallet) {
-  const r = await fetch(`${BASE}/token/${mint}/fees?wallet=${wallet}`, { headers: H() });
-  if (!r.ok) return null;
-  return r.json();
-}
-
-// Bags token URL
+// ─── URL builders ─────────────────────────────────────────────────────────────
 export const bagsTokenUrl = (mint) => `https://bags.fm/token/${mint}`;
 export const bagsTradeUrl = (mint) => `https://bags.fm/trade/${mint}`;
+
+// ─── Track real vs simulated mints ───────────────────────────────────────────
+export function markMintAsReal(mint) {
+  try {
+    const list = JSON.parse(localStorage.getItem('bcf_real_mints') || '[]');
+    if (!list.includes(mint)) { list.push(mint); localStorage.setItem('bcf_real_mints', JSON.stringify(list)); }
+  } catch {}
+}
+
+export function isRealMint(mint) {
+  try {
+    return JSON.parse(localStorage.getItem('bcf_real_mints') || '[]').includes(mint);
+  } catch { return false; }
+}

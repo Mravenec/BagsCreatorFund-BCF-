@@ -3,7 +3,7 @@ seeds = false
 skip-lint = false
 
 [programs.devnet]
-bags-creator-fund = "Rx1XswVLMPFAw48m2hVbKeM3eJYkZWNLe1ER5QzLg3L"
+bags-creator-fund = "D9KdRFUG4mZ3gqgDSF8mdfDpJk7qKHsmDn8g3dRsvfBV"
 
 [registry]
 url = "https://api.apr.dev"

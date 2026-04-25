@@ -463,15 +463,16 @@ export default function CampaignPage() {
 
         // 2. Fetch Project Identity (Secondary Data - Non-blocking)
         try {
-          const project = await fetchProject(provider, account.creator.toBase58());
+          const projIdx = account.projectIndex?.toNumber?.() ?? 0;
+          const project = await fetchProject(provider, account.creator.toBase58(), projIdx);
           if (project) {
             setToken({
-              mint: project.tokenMint.toBase58(),
-              symbol: project.resolvedSymbol,
-              name: project.resolvedName,
+              mint: typeof project.tokenMint === "string" ? project.tokenMint : project.tokenMint?.toBase58?.() ?? "",
+              symbol: project.symbol,
+              name: project.name,
               feeModeName: project.feeModeName,
               treasury: {
-                balanceSOL: (project.treasuryLamports?.toNumber() || 0) / LAMPORTS_PER_SOL,
+                balanceSOL: project.treasury?.balanceSOL ?? 0,
               }
             });
           }

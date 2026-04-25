@@ -1,0 +1,11 @@
+/mnt/c/Users/kcamp/CascadeProjects/solanaProject/BagsCreatorFund(BCF)/anchor/target/release/deps/libunicode_segmentation-2cfb26f70c4a4f01.rmeta: /home/mravenec/.cargo/git/checkouts/unicode-segmentation-9aeba23fd8efb4b3/8b894ca/src/lib.rs /home/mravenec/.cargo/git/checkouts/unicode-segmentation-9aeba23fd8efb4b3/8b894ca/src/grapheme.rs /home/mravenec/.cargo/git/checkouts/unicode-segmentation-9aeba23fd8efb4b3/8b894ca/src/sentence.rs /home/mravenec/.cargo/git/checkouts/unicode-segmentation-9aeba23fd8efb4b3/8b894ca/src/word.rs /home/mravenec/.cargo/git/checkouts/unicode-segmentation-9aeba23fd8efb4b3/8b894ca/src/tables.rs
+
+/mnt/c/Users/kcamp/CascadeProjects/solanaProject/BagsCreatorFund(BCF)/anchor/target/release/deps/libunicode_segmentation-2cfb26f70c4a4f01.rlib: /home/mravenec/.cargo/git/checkouts/unicode-segmentation-9aeba23fd8efb4b3/8b894ca/src/lib.rs /home/mravenec/.cargo/git/checkouts/unicode-segmentation-9aeba23fd8efb4b3/8b894ca/src/grapheme.rs /home/mravenec/.cargo/git/checkouts/unicode-segmentation-9aeba23fd8efb4b3/8b894ca/src/sentence.rs /home/mravenec/.cargo/git/checkouts/unicode-segmentation-9aeba23fd8efb4b3/8b894ca/src/word.rs /home/mravenec/.cargo/git/checkouts/unicode-segmentation-9aeba23fd8efb4b3/8b894ca/src/tables.rs
+
+/mnt/c/Users/kcamp/CascadeProjects/solanaProject/BagsCreatorFund(BCF)/anchor/target/release/deps/unicode_segmentation-2cfb26f70c4a4f01.d: /home/mravenec/.cargo/git/checkouts/unicode-segmentation-9aeba23fd8efb4b3/8b894ca/src/lib.rs /home/mravenec/.cargo/git/checkouts/unicode-segmentation-9aeba23fd8efb4b3/8b894ca/src/grapheme.rs /home/mravenec/.cargo/git/checkouts/unicode-segmentation-9aeba23fd8efb4b3/8b894ca/src/sentence.rs /home/mravenec/.cargo/git/checkouts/unicode-segmentation-9aeba23fd8efb4b3/8b894ca/src/word.rs /home/mravenec/.cargo/git/checkouts/unicode-segmentation-9aeba23fd8efb4b3/8b894ca/src/tables.rs
+
+/home/mravenec/.cargo/git/checkouts/unicode-segmentation-9aeba23fd8efb4b3/8b894ca/src/lib.rs:
+/home/mravenec/.cargo/git/checkouts/unicode-segmentation-9aeba23fd8efb4b3/8b894ca/src/grapheme.rs:
+/home/mravenec/.cargo/git/checkouts/unicode-segmentation-9aeba23fd8efb4b3/8b894ca/src/sentence.rs:
+/home/mravenec/.cargo/git/checkouts/unicode-segmentation-9aeba23fd8efb4b3/8b894ca/src/word.rs:
+/home/mravenec/.cargo/git/checkouts/unicode-segmentation-9aeba23fd8efb4b3/8b894ca/src/tables.rs:

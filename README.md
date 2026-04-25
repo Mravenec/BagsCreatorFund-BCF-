@@ -1,72 +1,130 @@
-# BagsCreatorFund
+# BagsCreatorFund (BCF) v0.2 — Multi-Token Edition
 
-> **Bags Hackathon 2025** — On-chain creator funding rounds powered by Bags × Solana DevNet
+**Bags Hackathon 2025 · Prize Pool $1M**
 
----
-
-## What is BagsCreatorFund?
-
-BagsCreatorFund is a decentralized creator funding platform where:
-
-- Creators launch a **Bags token** as their project identity
-- They run **funding rounds** — 100 positions, each backed by SOL
-- Every position purchase distributes **project tokens at a fixed rate**
-- **2% of every sale** goes to the project **treasury** automatically
-- At round end, a **verifiable on-chain draw** picks the winning position
-- If a participant holds it → they win the full prize pool
-- If no one holds it → the full pool goes to the **project treasury**
-- The creator can **withdraw from treasury** at any time (transparently)
-- Creators can run **multiple campaigns** reusing the same token
+> Creator funding rounds on Solana. Multiple tokens per wallet. Each token = independent project with its own treasury and unlimited campaigns.
 
 ---
 
-## Bags Integration
+## What's New in v0.2
 
-| Feature | Integration |
-|---|---|
-| Token creation | `POST /token-launch/create-token-info` |
-| Fee structures | 4 real modes from Bags docs (2%, 0.25%→1%, 1%→0.25%, 10%) |
-| Token trading | Links to `bags.fm/token/{mint}` |
-| API health check | Live ping on app load |
-| Multi-campaign | Same token reused across all campaigns |
+| Feature | v0.1 | v0.2 |
+|---|---|---|
+| Tokens per wallet | **1** (PDA collision) | **∞** (registry-indexed PDAs) |
+| Projects per wallet | 1 | Unlimited |
+| Treasury separation | 1 shared | Per-token isolated |
+| Campaign association | Implicit | Explicit `project_index` |
+| Registry account | ❌ | ✅ `CreatorRegistry` PDA |
 
 ---
 
-## Payment Methods
+## Architecture
 
-| Method | How |
-|---|---|
-| Phantom / Solflare | Connect → click position → sign TX |
-| Any DevNet address | Send SOL + memo → auto-detected (polling) |
-| Binance / Coinbase | Same (mainnet version) |
+```
+CreatorRegistry  (PDA: ["registry", creator])
+  └─ project_count: u64      ← auto-increments on each new token
+
+ProjectAccount   (PDA: ["project", creator, project_index_le_bytes])
+  ├─ project_index: u64      ← 0, 1, 2, 3, ...
+  ├─ token_mint: Pubkey      ← Bags Mainnet mint address
+  ├─ project_name / symbol
+  ├─ campaign_count: u64
+  └─ treasury_lamports: u64
+
+CampaignAccount  (PDA: ["campaign", creator, campaign_index_le_bytes])
+  ├─ project_index: u64      ← which project this campaign belongs to
+  ├─ campaign_index: u64     ← global per creator
+  └─ ... prize, positions, etc.
+```
+
+**Token lives on Solana Mainnet** (Bags/Meteora DBC).  
+**Campaigns live on DevNet** (BCF smart contract).
 
 ---
 
 ## Quick Start
 
 ```bash
-unzip bagscreator.zip && cd bagscreator
+# 1. Install dependencies
 npm install
+
+# 2. Add your API key to .env
+cp .env.example .env
+# VITE_BAGS_API_KEY=bags_prod_...
+
+# 3. Launch (DevNet demo — no deployment needed)
 npm run dev
+
+# 4. Deploy your own on-chain program (optional)
+bash scripts/deploy.sh
 ```
 
-Then open `http://localhost:5173`
+---
 
-### Setup for DevNet
-1. Phantom → Settings → Developer Settings → **Devnet**
-2. Dashboard → **Airdrop 2 SOL**
-3. **Create Token** → set name, symbol, fee structure
-4. **Create Campaign** → set prize, position price, duration
-5. Campaign page → **Deposit prize** to activate
-6. Click any position to participate
-7. When time ends → **Resolve Round**
+## Multi-Token Flow
+
+### Creating a second (or third) token
+1. Dashboard → **+ New Token**
+2. Fill in token name, symbol, fee structure
+3. Wallet signs → token minted on Bags Mainnet
+4. BCF auto-creates `ProjectAccount` at next available index
+5. Back to dashboard — all your tokens appear as cards
+
+### Creating a campaign for a specific token
+1. Dashboard → click **+ Campaign** on any token card, OR
+2. Navigate to `/create-campaign?project=0` (replace 0 with project index)
+3. If you have multiple tokens, a radio-button selector appears
+
+### Treasury per token
+- Each `ProjectAccount` has its own `treasury_lamports` balance
+- 2% of every position sale is credited to the parent project's treasury
+- Withdraw independently per token from the Dashboard
+
+---
+
+## Smart Contract
+
+### New Accounts
+
+#### `CreatorRegistry`
+```
+PDA seeds: ["registry", creator]
+Space: 8 + 32 + 8 = 48 bytes
+Fields:
+  creator: Pubkey
+  project_count: u64
+```
+Auto-created on first `initialize_project` call (`init_if_needed`).
+
+#### `ProjectAccount` (updated)
+```
+PDA seeds: ["project", creator, project_index_as_u64_le_bytes]
+Space: 248 bytes
+New fields vs v0.1:
+  project_index: u64   ← identifies which of creator's tokens this is
+  project_name:  [u8; 80]
+  token_symbol:  [u8; 12]
+```
+
+#### `CampaignAccount` (updated)
+```
+Added field: project_index: u64  ← links back to parent project
+```
+
+### Updated Instructions
+
+| Instruction | Change |
+|---|---|
+| `initialize_project` | Adds `registry` account + `name` + `symbol` args; auto-increments counter |
+| `create_campaign` | First arg is now `project_index: u64` |
+| `withdraw_treasury` | Identifies project by `project.project_index` in PDA |
 
 ---
 
 ## Environment Variables
 
 ```env
-VITE_BAGS_API_KEY=your_key_here
+VITE_BAGS_API_KEY=bags_prod_...           # Your Bags API key
 VITE_BAGS_API_BASE=https://public-api-v2.bags.fm/api/v1
 VITE_SOLANA_RPC=https://api.devnet.solana.com
 VITE_NETWORK=devnet
@@ -74,28 +132,28 @@ VITE_NETWORK=devnet
 
 ---
 
-## Project Structure
+## Key Technical Decisions
 
-```
-src/
-├── lib/
-│   ├── bags.js        # Bags API calls
-│   ├── solana.js      # DevNet utilities
-│   ├── store.js       # Data layer (tokens, campaigns, treasury)
-│   └── constants.js   # SOL price, fee modes, config
-├── components/
-│   ├── Layout.jsx
-│   ├── CampaignCard.jsx
-│   └── Toast.jsx
-└── pages/
-    ├── HomePage.jsx
-    ├── ExplorePage.jsx
-    ├── CreateTokenPage.jsx    # Step 1: Bags token
-    ├── CreateCampaignPage.jsx # Step 2: funding round
-    ├── CampaignPage.jsx       # Positions grid + payment flows
-    └── DashboardPage.jsx      # Treasury + withdrawal management
-```
+**Why `init_if_needed` on the registry?**  
+Allows `initialize_project` to be a single atomic transaction: if no registry exists, create it AND create the first project in one call. Subsequent calls just read the existing registry.
+
+**Why is `campaign_index` global (not per-project)?**  
+Keeps `CampaignAccount` PDA derivation simple. A creator's N-th campaign always lives at PDA `["campaign", creator, N]` regardless of which project it belongs to. The `project_index` field inside `CampaignAccount` handles the association.
+
+**Why fixed byte arrays instead of Rust `String` for name/symbol?**  
+Fixed size = predictable account space. No runtime serialization edge cases. `deploy.sh` generates correct IDL from Rust structs automatically on rebuild.
 
 ---
 
-Built for **Bags Hackathon 2025** · discord.gg/bagsapp · @BagsHackathon
+## Hackathon Judges
+
+This project demonstrates:
+- ✅ Real Bags API integration (token creation with `create-launch-transaction`)
+- ✅ Multi-token support (unlimited projects per wallet)
+- ✅ Transparent on-chain treasury per token
+- ✅ Randomized winner selection via Solana slot hashes (verifiable, trustless)
+- ✅ Clean separation of Mainnet (token) and DevNet (campaigns)
+
+**Live at:** [Vercel deployment URL]  
+**Program ID:** `Rx1XswVLMPFAw48m2hVbKeM3eJYkZWNLe1ER5QzLg3L`  
+**Explorer:** https://explorer.solana.com/address/Rx1XswVLMPFAw48m2hVbKeM3eJYkZWNLe1ER5QzLg3L?cluster=devnet
