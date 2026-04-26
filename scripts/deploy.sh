@@ -318,6 +318,16 @@ echo -e "${GREEN}╔════════════════════
 echo -e "${GREEN}║              DEPLOYMENT COMPLETE ✓                          ║${NC}"
 echo -e "${GREEN}╚══════════════════════════════════════════════════════════════╝${NC}"
 # 7. Launching Dual-Engine (Watcher + Frontend)
+# Detect network name from RPC URL
+RPC_URL=$(solana config get | grep "RPC URL" | awk '{print $3}')
+if [[ "$RPC_URL" == *"devnet"* ]]; then
+  NETWORK="DevNet"
+elif [[ "$RPC_URL" == *"mainnet"* ]]; then
+  NETWORK="MainNet"
+else
+  NETWORK="Unknown"
+fi
+
 echo -e "${GREEN}  Program ID : ${CYAN}$PROGRAM_ID${NC}"
 echo -e "${GREEN}  Network    : ${CYAN}$NETWORK${NC}"
 echo -e "${GREEN}────────────────────────────────────────────────────────────────${NC}"
