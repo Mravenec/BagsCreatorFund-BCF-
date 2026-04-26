@@ -10,6 +10,13 @@ import { AnchorProvider }        from '@coral-xyz/anchor';
 import '@solana/wallet-adapter-react-ui/styles.css';
 
 import { RPC_URL } from './lib/solana.js';
+import { BCF_PROGRAM_ID, NETWORK } from './lib/constants.js';
+
+// Log active Program ID at startup — helps catch ID mismatch immediately
+if (typeof window !== 'undefined') {
+  console.log(`[BCF] Active Program ID (${NETWORK}): ${BCF_PROGRAM_ID}`);
+  console.log(`[BCF] RPC: ${RPC_URL}`);
+}
 import { ToastProvider } from './components/Toast.jsx';
 import Layout              from './components/Layout.jsx';
 import HomePage            from './pages/HomePage.jsx';

@@ -1,3 +1,4 @@
+import { IS_MAINNET, NETWORK } from '../lib/constants.js';
 import React, { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useWallet, useConnection, useAnchorWallet } from "@solana/wallet-adapter-react";
@@ -94,7 +95,7 @@ export default function CreateTokenPage() {
       }
 
       // ── Create on-chain project in BCF (DevNet) ─────────────────────────────
-      setStatusMsg("🔗 Creating BCF project on DevNet...");
+      setStatusMsg(`🔗 Creating BCF project on ${IS_MAINNET?'Mainnet':'DevNet'}...`);
       toast("Initializing on-chain project...", "info");
 
       const { projectIndex } = await initializeProject(provider, {
@@ -267,7 +268,7 @@ export default function CreateTokenPage() {
         ["Symbol",        `$${form.symbol}`],
         ["Fee Structure", feeMode?.name],
         ["Creator Earns", feeMode?.creatorEarns],
-        ["Networks",      "Token → Bags Mainnet · Campaigns → Solana DevNet"],
+        ["Networks", IS_MAINNET ? "Token → Bags Mainnet · Campaigns → Mainnet" : "Token → Bags Mainnet · Campaigns → DevNet"],
       ].map(([l, v], i, arr) => (
         <div key={l} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "11px 0", borderBottom: i < arr.length - 1 ? "1px solid var(--border)" : "none" }}>
           <span style={{ fontSize: ".78rem", color: "var(--text3)", textTransform: "uppercase" }}>{l}</span>

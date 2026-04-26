@@ -1,3 +1,4 @@
+import { IS_MAINNET, NETWORK } from '../lib/constants.js';
 import React, { useState, useEffect } from "react";
 import { fetchAllCampaigns } from "../lib/programClient.js";
 import { useConnection } from "@solana/wallet-adapter-react";

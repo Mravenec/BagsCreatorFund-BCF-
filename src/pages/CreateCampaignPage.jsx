@@ -1,3 +1,4 @@
+import { IS_MAINNET, NETWORK } from '../lib/constants.js';
 import React, { useState, useEffect } from "react";
 import { useNavigate, useSearchParams, Link } from "react-router-dom";
 import { useWallet, useConnection, useAnchorWallet } from "@solana/wallet-adapter-react";
@@ -223,7 +224,7 @@ export default function CreateCampaignPage() {
         ["Prize",       `${prize} SOL ≈ $${toUSDC(prize)}`],
         ["Pos. Price",  `${ticketPrice} SOL / slot`],
         ["Duration",    `${form.durationHours}h`],
-        ["Network",     "Solana DevNet"],
+        ["Network", IS_MAINNET ? "Solana Mainnet (live)" : "Solana DevNet (testing)"],
       ].map(([l, v], i, arr) => (
         <div key={l} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "11px 0", borderBottom: i < arr.length - 1 ? "1px solid var(--border)" : "none" }}>
           <span style={{ fontSize: ".78rem", color: "var(--text3)", textTransform: "uppercase" }}>{l}</span>

@@ -10,7 +10,9 @@ import {
 import { AnchorProvider } from "@coral-xyz/anchor";
 import { LAMPORTS_PER_SOL } from "@solana/web3.js";
 import { requestAirdrop, getSOLBalance } from "../lib/solana.js";
-import { bagsTokenUrl, isRealMint } from "../lib/bags.js";
+import { bagsTokenUrl, isRealMint, getTokenMarketData, executeReinvest,
+  getClaimablePositions, getClaimTransactions } from "../lib/bags.js";
+import { IS_MAINNET, NETWORK, SOL_MINT } from "../lib/constants.js";
 import { useToast } from "../components/Toast.jsx";
 
 export default function DashboardPage() {
@@ -28,6 +30,19 @@ export default function DashboardPage() {
   // Withdraw modal
   const [wModal, setWModal]     = useState({ show: false, project: null });
   const [wAmount, setWAmount]   = useState("");
+
+  // Reinvest modal  
+  const [rModal, setRModal]     = useState({ show: false, project: null });
+  const [rAmount, setRAmount]   = useState("");
+  const [rQuote,  setRQuote]    = useState(null);
+  const [rLoading, setRLoading] = useState(false);
+  const [rStep,   setRStep]     = useState(1); // 1=withdraw, 2=swap
+
+  // Token market data cache { mint → {price, volume24h, marketCap, holders} }
+  const [marketData, setMarketData] = useState({});
+
+  // Claimable fees
+  const [claimable, setClaimable]   = useState([]);
 
   // Selected project for campaign filtering (null = show all)
   const [activeProjectIndex, setActiveProjectIndex] = useState(null);
@@ -66,6 +81,22 @@ export default function DashboardPage() {
       // 3. Balance
       const b = await getSOLBalance(pubkeyStr);
       setBalance(b || 0);
+
+      // 4. Token market data for each project (best-effort)
+      const mdata = {};
+      for (const p of allProjects) {
+        if (p.mint && p.mint !== 'D9KdRFUG4mZ3gqgDSF8mdfDpJk7qKHsmDn8g3dRsvfBV') {
+          const md = await getTokenMarketData(p.mint);
+          if (md) mdata[p.mint] = md;
+        }
+      }
+      setMarketData(mdata);
+
+      // 5. Claimable fee positions
+      try {
+        const cl = await getClaimablePositions(pubkeyStr);
+        setClaimable(Array.isArray(cl) ? cl : []);
+      } catch { setClaimable([]); }
 
     } catch (e) {
       console.error("[Dashboard] error:", e.message);
@@ -192,7 +223,7 @@ export default function DashboardPage() {
   if (loading) return (
     <div style={{ padding: "100px 24px", textAlign: "center" }}>
       <div className="spinner" style={{ margin: "0 auto 20px" }} />
-      <p style={{ color: "var(--text3)" }}>Loading DevNet data...</p>
+      <p style={{ color: "var(--text3)" }}>Loading {NETWORK} data...</p>
     </div>
   );
 
@@ -216,14 +247,16 @@ export default function DashboardPage() {
 
         <div style={{ display: "flex", gap: "32px", alignItems: "flex-end" }}>
           <div style={{ textAlign: "right" }}>
-            <div style={{ fontSize: ".7rem", color: "var(--text3)", textTransform: "uppercase", marginBottom: "2px" }}>DevNet Balance</div>
+            <div style={{ fontSize: ".7rem", color: "var(--text3)", textTransform: "uppercase", marginBottom: "2px" }}>{IS_MAINNET ? "Mainnet" : "DevNet"} Balance</div>
             <div style={{ fontSize: "1.3rem", fontWeight: 700, fontFamily: "var(--mono)" }}>
               {balance.toFixed(4)} <span style={{ color: "var(--accent)", fontSize: ".9rem" }}>SOL</span>
             </div>
-            <button onClick={handleAirdrop} disabled={dropping}
-              style={{ background: "none", border: "none", color: "var(--accent)", fontSize: ".78rem", cursor: "pointer", textDecoration: "underline" }}>
-              {dropping ? "..." : "☁️ +2 SOL Airdrop"}
-            </button>
+            {!IS_MAINNET && (
+              <button onClick={handleAirdrop} disabled={dropping}
+                style={{ background: "none", border: "none", color: "var(--accent)", fontSize: ".78rem", cursor: "pointer", textDecoration: "underline" }}>
+                {dropping ? "..." : "☁️ +2 SOL Airdrop"}
+              </button>
+            )}
           </div>
           <div style={{ textAlign: "right" }}>
             <div style={{ fontSize: ".7rem", color: "var(--text3)", textTransform: "uppercase", marginBottom: "2px" }}>Total Treasury</div>
@@ -299,19 +332,44 @@ export default function DashboardPage() {
                     </span>
                   </div>
 
+                  {/* Market data */}
+                  {marketData[p.mint] && (
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px", marginBottom: "12px" }}>
+                      {[
+                        ["Price", marketData[p.mint].price ? `$${Number(marketData[p.mint].price).toFixed(6)}` : "—"],
+                        ["Vol 24h", marketData[p.mint].volume24h ? `$${Number(marketData[p.mint].volume24h).toLocaleString('en',{maximumFractionDigits:0})}` : "—"],
+                        ["Holders", marketData[p.mint].holders || "—"],
+                      ].map(([l,v]) => (
+                        <div key={l} style={{ textAlign:"center", padding:"6px 4px", background:"var(--bg2)", borderRadius:"6px" }}>
+                          <div style={{ fontSize:".6rem", color:"var(--text3)", textTransform:"uppercase", marginBottom:"2px" }}>{l}</div>
+                          <div style={{ fontSize:".78rem", fontWeight:700, color:"var(--accent)", fontFamily:"var(--mono)" }}>{v}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
                   {/* Treasury */}
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", background: "rgba(52,211,153,.04)", borderRadius: "8px", border: "1px solid rgba(52,211,153,.1)", marginBottom: "14px" }}>
-                    <div>
-                      <div style={{ fontSize: ".62rem", color: "var(--text3)", textTransform: "uppercase", marginBottom: "2px" }}>Treasury</div>
-                      <div style={{ fontSize: "1.1rem", fontWeight: 800, color: "var(--green)" }}>
-                        {p.treasury.balanceSOL.toFixed(4)} SOL
+                  <div style={{ padding: "10px 14px", background: "rgba(52,211,153,.04)", borderRadius: "8px", border: "1px solid rgba(52,211,153,.1)", marginBottom: "14px" }}>
+                    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom: p.treasury.balanceSOL > 0 ? "10px" : "0" }}>
+                      <div>
+                        <div style={{ fontSize: ".62rem", color: "var(--text3)", textTransform: "uppercase", marginBottom: "2px" }}>Treasury</div>
+                        <div style={{ fontSize: "1.1rem", fontWeight: 800, color: "var(--green)" }}>
+                          {p.treasury.balanceSOL.toFixed(4)} SOL
+                        </div>
                       </div>
+                      {p.treasury.balanceSOL > 0 && (
+                        <button
+                          onClick={e => { e.stopPropagation(); handleWithdraw(p); }}
+                          className="btn btn-sm btn-ghost" style={{ fontSize: ".72rem", padding: "5px 10px" }}>
+                          ↑ Withdraw
+                        </button>
+                      )}
                     </div>
                     {p.treasury.balanceSOL > 0 && (
                       <button
-                        onClick={e => { e.stopPropagation(); handleWithdraw(p); }}
-                        className="btn btn-sm btn-primary" style={{ fontSize: ".72rem", padding: "6px 12px" }}>
-                        💰 Withdraw
+                        onClick={e => { e.stopPropagation(); setRModal({ show: true, project: p }); setRAmount(p.treasury.balanceSOL.toFixed(4)); setRQuote(null); setRStep(1); }}
+                        className="btn btn-primary btn-sm" style={{ width:"100%", fontSize:".74rem", padding:"7px", background:"linear-gradient(90deg, #7c3aed 0%, #38bdf8 100%)", border:"none" }}>
+                        🔥 Reinvest in ${p.symbol} Token
                       </button>
                     )}
                   </div>
@@ -462,6 +520,122 @@ export default function DashboardPage() {
           </div>
         )}
       </section>
+
+      {/* ── REINVEST MODAL ── */}
+      {rModal.show && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.88)", backdropFilter:"blur(10px)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:"20px" }}>
+          <div className="card" style={{ maxWidth:"480px", width:"100%", padding:"32px" }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"6px" }}>
+              <h2 style={{ fontWeight:800, margin:0 }}>🔥 Reinvest Treasury</h2>
+              <button onClick={() => setRModal({ show:false, project:null })} style={{ background:"none", border:"none", color:"var(--text3)", fontSize:"1.4rem", cursor:"pointer" }}>×</button>
+            </div>
+            <p style={{ color:"var(--text3)", fontSize:".84rem", marginBottom:"20px" }}>
+              Use treasury SOL to buy <strong style={{ color:"var(--accent)" }}>${rModal.project?.symbol}</strong> on Bags.
+              This creates buy pressure and increases token value.
+            </p>
+
+            {/* Flywheel explanation */}
+            <div style={{ padding:"12px 14px", background:"rgba(124,58,237,.08)", border:"1px solid rgba(124,58,237,.2)", borderRadius:"8px", marginBottom:"18px", fontSize:".77rem", color:"#a78bfa", lineHeight:1.6 }}>
+              <strong style={{ display:"block", marginBottom:"4px" }}>The Flywheel</strong>
+              Campaign treasury → buy ${rModal.project?.symbol} → price rises → more attractive campaigns → bigger treasury → repeat
+            </div>
+
+            <label style={{ fontSize:".78rem", color:"var(--text2)", display:"block", marginBottom:"6px" }}>
+              Amount to reinvest (SOL) — available: {rModal.project?.treasury.balanceSOL.toFixed(4)} SOL
+            </label>
+            <input type="number" value={rAmount}
+              onChange={e => { setRAmount(e.target.value); setRQuote(null); }}
+              className="input" style={{ marginBottom:"12px", fontSize:"1rem", fontWeight:600 }}
+              max={rModal.project?.treasury.balanceSOL}
+              step="0.001" />
+
+            {/* Quote preview */}
+            {rQuote && (
+              <div style={{ padding:"12px 14px", background:"var(--bg2)", border:"1px solid var(--border)", borderRadius:"8px", marginBottom:"14px", fontSize:".8rem" }}>
+                <div style={{ display:"flex", justifyContent:"space-between", marginBottom:"4px" }}>
+                  <span style={{ color:"var(--text3)" }}>You spend</span>
+                  <span style={{ fontFamily:"var(--mono)", fontWeight:700 }}>{rAmount} SOL</span>
+                </div>
+                <div style={{ display:"flex", justifyContent:"space-between", marginBottom:"4px" }}>
+                  <span style={{ color:"var(--text3)" }}>You receive (est.)</span>
+                  <span style={{ fontFamily:"var(--mono)", fontWeight:700, color:"var(--accent)" }}>
+                    {rQuote.outAmount ? Number(rQuote.outAmount / 1e6).toLocaleString() : "—"} ${rModal.project?.symbol}
+                  </span>
+                </div>
+                <div style={{ display:"flex", justifyContent:"space-between" }}>
+                  <span style={{ color:"var(--text3)" }}>Price impact</span>
+                  <span style={{ fontFamily:"var(--mono)", color:Number(rQuote.priceImpactPct) > 2 ? "var(--danger)" : "var(--green)" }}>
+                    {rQuote.priceImpactPct ? Number(rQuote.priceImpactPct).toFixed(2) : "—"}%
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {rStep === 1 && (
+              <div style={{ fontSize:".73rem", color:"var(--text3)", padding:"8px 12px", background:"rgba(56,189,248,.05)", borderRadius:"6px", marginBottom:"14px" }}>
+                Step 1: Withdraw {rAmount} SOL from treasury → your wallet
+                <br/>Step 2: Swap SOL → ${rModal.project?.symbol} on Bags Mainnet
+                {!IS_MAINNET && <div style={{ marginTop:"4px", color:"var(--warning)", fontWeight:600 }}>
+                  ⚠ Reinvestment uses Mainnet Bags pools. DevNet SOL won't transfer.
+                </div>}
+              </div>
+            )}
+
+            <div style={{ display:"flex", gap:"10px" }}>
+              <button className="btn btn-outline" style={{ flex:1 }} onClick={() => setRModal({ show:false, project:null })}>Cancel</button>
+              {!rQuote ? (
+                <button className="btn btn-secondary" style={{ flex:2 }} disabled={rLoading || !rAmount || parseFloat(rAmount)<=0}
+                  onClick={async () => {
+                    setRLoading(true);
+                    try {
+                      const lamports = Math.floor(parseFloat(rAmount) * 1e9);
+                      const { getReinvestQuote } = await import("../lib/bags.js");
+                      const q = await getReinvestQuote(lamports, rModal.project.mint);
+                      setRQuote(q);
+                    } catch(e) {
+                      toast("Quote failed: " + (e.message||"").slice(0,80), "error");
+                    } finally { setRLoading(false); }
+                  }}>
+                  {rLoading ? "Getting quote..." : "Get Quote"}
+                </button>
+              ) : (
+                <button className="btn btn-primary" style={{ flex:2, background:"linear-gradient(90deg, #7c3aed 0%, #38bdf8 100%)", border:"none" }}
+                  disabled={rLoading}
+                  onClick={async () => {
+                    setRLoading(true);
+                    try {
+                      // Step 1: withdraw from treasury
+                      toast("Step 1: Withdrawing from treasury...", "info");
+                      const { AnchorProvider } = await import("@coral-xyz/anchor");
+                      const provider = new AnchorProvider(connection, wallet, { commitment:"confirmed" });
+                      const { withdrawTreasuryOnChain } = await import("../lib/programClient.js");
+                      await withdrawTreasuryOnChain(provider, {
+                        projectIndex: rModal.project.projectIndex,
+                        amountLamports: Math.floor(parseFloat(rAmount) * 1e9),
+                      });
+                      toast("Step 1 done ✓ — Step 2: Buying token on Bags...", "success");
+
+                      // Step 2: swap on Bags
+                      const { executeReinvest } = await import("../lib/bags.js");
+                      const { signature } = await executeReinvest(
+                        wallet,
+                        Math.floor(parseFloat(rAmount) * 1e9),
+                        rModal.project.mint
+                      );
+                      toast(`🔥 Reinvestment complete! ${rAmount} SOL → $${rModal.project.symbol} ↗`, "success");
+                      setRModal({ show:false, project:null });
+                      setTimeout(() => refresh(), 2000);
+                    } catch(e) {
+                      toast("Reinvest failed: " + (e.message||"").slice(0,100), "error");
+                    } finally { setRLoading(false); }
+                  }}>
+                  {rLoading ? "Processing..." : `🔥 Confirm — Buy $${rModal.project?.symbol}`}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── WITHDRAW MODAL ── */}
       {wModal.show && (

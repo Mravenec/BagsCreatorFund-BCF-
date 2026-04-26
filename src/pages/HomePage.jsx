@@ -1,3 +1,4 @@
+import { IS_MAINNET, NETWORK } from '../lib/constants.js';
 import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { fetchAllCampaigns, totalPot } from "../lib/programClient.js";
@@ -41,7 +42,7 @@ export default function HomePage() {
               <span style={{ width:6, height:6, borderRadius:"50%", background: apiOk===null?"var(--warning)":apiOk?"var(--green)":"var(--danger)", display:"inline-block" }} />
               <span style={{ color:"var(--text2)" }}>Bags API {apiOk===null?"connecting...":apiOk?"online":"offline"}</span>
             </div>
-            <span className="badge badge-devnet">Solana DevNet</span>
+            <span style={{ fontSize:".65rem", fontWeight:700, padding:"3px 9px", borderRadius:"6px", background: IS_MAINNET?"rgba(52,211,153,.12)":"rgba(167,139,250,.12)", color: IS_MAINNET?"var(--green)":"var(--purple)", border:`1px solid ${IS_MAINNET?"rgba(52,211,153,.3)":"rgba(167,139,250,.3)"}` }}>Solana {IS_MAINNET?"Mainnet":"DevNet"}</span>
             <span className="badge badge-bags">Bags Hackathon 2025</span>
           </div>
 

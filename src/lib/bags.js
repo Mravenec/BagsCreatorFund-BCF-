@@ -312,3 +312,134 @@ export function isRealMint(mint) {
     return JSON.parse(localStorage.getItem('bcf_real_mints') || '[]').includes(mint);
   } catch { return false; }
 }
+
+// ─── Token market data ────────────────────────────────────────────────────────
+// Fetches price, volume, market cap, and holder count from Bags API
+export async function getTokenMarketData(mint) {
+  if (!mint || mint.length < 32) return null;
+  try {
+    const r = await fetch(`${BASE}/token/${mint}`, { headers: authHeader() });
+    if (!r.ok) return null;
+    const d = await r.json();
+    const t = d?.response || d;
+    return {
+      price:     t?.price       || t?.priceUsd     || 0,
+      volume24h: t?.volume24h   || t?.volume        || 0,
+      marketCap: t?.marketCap   || t?.mcap          || 0,
+      holders:   t?.holders     || t?.holderCount   || 0,
+      symbol:    t?.symbol      || '???',
+      name:      t?.name        || 'Unknown',
+      image:     t?.image       || t?.logo          || null,
+    };
+  } catch { return null; }
+}
+
+// ─── Bags SDK Trade: get quote for SOL → token swap ──────────────────────────
+export async function getReinvestQuote(solLamports, tokenMint) {
+  if (!solLamports || !tokenMint) throw new Error('Missing params');
+  const params = new URLSearchParams({
+    inputMint:   'So11111111111111111111111111111111111111112', // wrapped SOL
+    outputMint:  tokenMint,
+    amount:      String(solLamports),
+    slippageMode: 'auto',
+  });
+  const r = await fetch(`${BASE}/trade/quote?${params}`, { headers: authHeader() });
+  if (!r.ok) {
+    const msg = await parseError(r);
+    throw new Error(`Bags trade/quote error ${r.status}: ${msg}`);
+  }
+  const d = await r.json();
+  return d?.response || d;
+}
+
+// ─── Bags SDK Trade: create swap transaction ──────────────────────────────────
+export async function createReinvestTransaction(quoteResponse, userPublicKey) {
+  const r = await fetch(`${BASE}/trade/swap`, {
+    method: 'POST',
+    headers: jsonHeader(),
+    body: JSON.stringify({
+      quoteResponse,
+      userPublicKey: userPublicKey.toString(),
+    }),
+  });
+  if (!r.ok) {
+    const msg = await parseError(r);
+    throw new Error(`Bags trade/swap error ${r.status}: ${msg}`);
+  }
+  const d = await r.json();
+  return d?.response || d; // { transaction: VersionedTransaction, computeUnitLimit, ... }
+}
+
+// ─── Execute reinvestment: SOL → creator token via Bags swap ─────────────────
+// wallet must be the connected Phantom/Solflare wallet adapter
+export async function executeReinvest(wallet, solLamports, tokenMint) {
+  if (!wallet?.signTransaction) throw new Error('Wallet does not support signTransaction');
+
+  // 1. Get quote
+  const quote = await getReinvestQuote(solLamports, tokenMint);
+  if (!quote) throw new Error('Could not get swap quote from Bags');
+
+  // 2. Create swap transaction
+  const swapData = await createReinvestTransaction(quote, wallet.publicKey);
+
+  // 3. Decode + sign + send on Mainnet
+  let tx;
+  try {
+    const bs58Mod = await import('bs58');
+    const bs58    = bs58Mod.default || bs58Mod;
+    const { VersionedTransaction } = await import('@solana/web3.js');
+    const raw = typeof swapData.transaction === 'string'
+      ? bs58.decode(swapData.transaction)
+      : Buffer.from(swapData.transaction, 'base64');
+    tx = VersionedTransaction.deserialize(raw);
+  } catch {
+    const { Transaction } = await import('@solana/web3.js');
+    tx = Transaction.from(Buffer.from(swapData.transaction, 'base64'));
+  }
+
+  const { blockhash, lastValidBlockHeight } = await mainnetConnection.getLatestBlockhash('finalized');
+  if (tx.message) {
+    tx.message.recentBlockhash = blockhash; // VersionedTransaction
+  } else {
+    tx.recentBlockhash = blockhash;
+    tx.feePayer = wallet.publicKey;
+  }
+
+  const signed = await wallet.signTransaction(tx);
+  const sig = await mainnetConnection.sendRawTransaction(signed.serialize(), {
+    skipPreflight: false,
+    maxRetries: 5,
+  });
+  await mainnetConnection.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, 'confirmed');
+  return { signature: sig, quote };
+}
+
+// ─── Claimable fee positions ──────────────────────────────────────────────────
+export async function getClaimablePositions(walletPublicKey) {
+  try {
+    const r = await fetch(
+      `${BASE}/token-launch/claimable-positions?wallet=${walletPublicKey}`,
+      { headers: authHeader() }
+    );
+    if (!r.ok) return [];
+    const d = await r.json();
+    return d?.response || d || [];
+  } catch { return []; }
+}
+
+// ─── Get claim transactions via Bags API ─────────────────────────────────────
+export async function getClaimTransactions(walletPublicKey, tokenMint) {
+  try {
+    const r = await fetch(`${BASE}/token-launch/claim-txs/v3`, {
+      method: 'POST',
+      headers: jsonHeader(),
+      body: JSON.stringify({
+        wallet: walletPublicKey.toString(),
+        baseMint: tokenMint,
+      }),
+    });
+    if (!r.ok) return [];
+    const d = await r.json();
+    return d?.response || [];
+  } catch { return []; }
+}

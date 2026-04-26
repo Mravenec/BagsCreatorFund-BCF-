@@ -13,7 +13,7 @@
 use anchor_lang::prelude::*;
 use anchor_lang::system_program;
 
-declare_id!("D9KdRFUG4mZ3gqgDSF8mdfDpJk7qKHsmDn8g3dRsvfBV");
+declare_id!("ELarLMHYVxR2TndqEc6kHUSvwRyZUPHJ5BHFcD7yQtcJ");
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const POSITIONS:    usize = 100;
@@ -114,6 +114,18 @@ pub struct CampaignAccount {
     pub positions:               [PositionInfo; POSITIONS], // 4000
 }
 // Total: 32+8+8+32+8+8+8+8+8+8+1+1+6+8+32+8+8+120+600+4000 = 4918
+
+/// PDA ["vault", campaign_key, position_index_byte, recipient_key]
+/// Temporary personal escrow for CEX/exchange users.
+/// Funded by user directly; watcher sweeps it into campaign when balance >= price.
+#[account]
+pub struct PositionVault {
+    pub campaign:       Pubkey,  // 32
+    pub recipient:      Pubkey,  // 32
+    pub price_lamports: u64,     // 8
+    pub position_index: u8,      // 1
+    pub bump:           u8,      // 1
+} // disc 8 + 74 = 82 bytes
 
 // ─── Program ──────────────────────────────────────────────────────────────────
 #[program]
@@ -274,7 +286,8 @@ pub mod bags_creator_fund {
             price,
         )?;
 
-        ctx.accounts.project.treasury_lamports += treasury_cut;
+        // treasury_cut is tracked in campaign.treasury_contribution for display.
+        // Actual SOL stays in campaign PDA until route_no_winner moves everything to project.
 
         {
             let mut c = ctx.accounts.campaign.load_mut()?;
@@ -303,13 +316,94 @@ pub mod bags_creator_fund {
         require_keys_eq!(creator, authority, BCFError::Unauthorized);
 
         let treasury_cut = price * TREASURY_BPS / 10_000;
-        ctx.accounts.project.treasury_lamports += treasury_cut;
 
         let mut c = ctx.accounts.campaign.load_mut()?;
         c.positions[position_index as usize].filled = 1;
         c.positions[position_index as usize].owner  = payer;
         c.total_collected       += price;
         c.treasury_contribution += treasury_cut;
+        Ok(())
+    }
+
+    /// Create a personal vault PDA for a CEX/exchange user.
+    /// recipient = Solana address that will own the position.
+    /// Anyone (payer) can pay the rent to create it.
+    pub fn create_position_vault(
+        ctx: Context<CreatePositionVault>,
+        position_index: u8,
+    ) -> Result<()> {
+        let price_lamports = {
+            let c = ctx.accounts.campaign.load()?;
+            require!(c.status == 1, BCFError::CampaignNotActive);
+            require!((position_index as usize) < POSITIONS, BCFError::InvalidPosition);
+            require!(c.positions[position_index as usize].filled == 0, BCFError::PositionTaken);
+            c.position_price_lamports
+        };
+
+        let vault = &mut ctx.accounts.position_vault;
+        vault.campaign       = ctx.accounts.campaign.key();
+        vault.recipient      = ctx.accounts.recipient.key();
+        vault.price_lamports = price_lamports;
+        vault.position_index = position_index;
+        vault.bump           = ctx.bumps.position_vault;
+        Ok(())
+    }
+
+    /// Sweep a funded vault into the campaign and assign the position.
+    /// Closes the vault — remaining rent lamports go to `sweeper`.
+    pub fn sweep_position_vault(
+        ctx: Context<SweepPositionVault>,
+        position_index: u8,
+    ) -> Result<()> {
+        let vault     = &ctx.accounts.position_vault;
+        let recipient = vault.recipient;
+        let price     = vault.price_lamports;
+
+        require_keys_eq!(vault.campaign,       ctx.accounts.campaign.key(),   BCFError::Unauthorized);
+        require_keys_eq!(vault.recipient,      ctx.accounts.recipient.key(),  BCFError::Unauthorized);
+        require!(vault.position_index == position_index, BCFError::InvalidPosition);
+
+        let (status, deadline, pos_filled) = {
+            let c = ctx.accounts.campaign.load()?;
+            (c.status, c.deadline, c.positions[position_index as usize].filled)
+        };
+
+        require!(status == 1, BCFError::CampaignNotActive);
+        require!(Clock::get()?.unix_timestamp < deadline, BCFError::CampaignExpired);
+        require!((position_index as usize) < POSITIONS, BCFError::InvalidPosition);
+        require!(pos_filled == 0,  BCFError::PositionTaken);
+
+        let vault_bal = ctx.accounts.position_vault.to_account_info().lamports();
+        require!(vault_bal >= price, BCFError::InsufficientFunds);
+
+        // Transfer price lamports: vault → campaign
+        **ctx.accounts.position_vault.to_account_info().try_borrow_mut_lamports()? -= price;
+        **ctx.accounts.campaign.to_account_info().try_borrow_mut_lamports()?       += price;
+
+        // Assign position on-chain
+        {
+            let mut c = ctx.accounts.campaign.load_mut()?;
+            c.positions[position_index as usize].filled = 1;
+            c.positions[position_index as usize].owner  = recipient;
+            c.total_collected       += price;
+            let cut = price * TREASURY_BPS / 10_000;
+            c.treasury_contribution += cut;
+        }
+        // Anchor `close = sweeper` drains remaining rent to sweeper after this returns
+        Ok(())
+    }
+
+    /// Refund a vault — returns all SOL to recipient.
+    /// Use when campaign expired, position taken, or user changed mind.
+    /// Anchor `close = recipient` drains all lamports to recipient.
+    pub fn refund_position_vault(
+        ctx: Context<RefundPositionVault>,
+        position_index: u8,
+    ) -> Result<()> {
+        let vault = &ctx.accounts.position_vault;
+        require_keys_eq!(vault.campaign,  ctx.accounts.campaign.key(),  BCFError::Unauthorized);
+        require_keys_eq!(vault.recipient, ctx.accounts.recipient.key(), BCFError::Unauthorized);
+        require!(vault.position_index == position_index, BCFError::InvalidPosition);
         Ok(())
     }
 
@@ -384,6 +478,35 @@ pub mod bags_creator_fund {
         Ok(())
     }
 
+    /// Push the prize to the winner (allows watcher/creator to pay for winner).
+    /// Winner does NOT need to be a signer.
+    pub fn push_prize(ctx: Context<PushPrize>) -> Result<()> {
+        let (status, winning_pos, pos_filled, pos_owner, prize, collected) = {
+            let c = ctx.accounts.campaign.load()?;
+            let wp = c.winning_position;
+            (c.status, wp, c.positions[wp as usize].filled, c.positions[wp as usize].owner,
+             c.prize_lamports, c.total_collected)
+        };
+
+        require!(status == 2,        BCFError::CampaignNotSettled);
+        require!(winning_pos != 255, BCFError::NotResolved);
+        require!(pos_filled == 1,    BCFError::NoWinner);
+        require_keys_eq!(pos_owner, ctx.accounts.winner.key(), BCFError::NotWinner);
+
+        let total = prize + collected;
+        require!(total > 0, BCFError::InsufficientFunds);
+
+        // Lamport transfer: campaign PDA → winner address
+        **ctx.accounts.campaign.to_account_info().try_borrow_mut_lamports()? -= total;
+        **ctx.accounts.winner.to_account_info().try_borrow_mut_lamports()?   += total;
+
+        let mut c = ctx.accounts.campaign.load_mut()?;
+        c.prize_lamports  = 0;
+        c.total_collected = 0;
+        Ok(())
+    }
+
+
     pub fn route_no_winner_to_treasury(ctx: Context<RouteNoWinner>) -> Result<()> {
         let (status, winning_pos, pos_filled, prize, collected) = {
             let c = ctx.accounts.campaign.load()?;
@@ -404,9 +527,10 @@ pub mod bags_creator_fund {
         let total = prize + collected;
         require!(total > 0, BCFError::InsufficientFunds);
 
-        // Lamport transfer — no borrow held
-        **ctx.accounts.campaign.to_account_info().try_borrow_mut_lamports()?        -= total;
-        **ctx.accounts.project_creator.to_account_info().try_borrow_mut_lamports()? += total;
+        // Lamport transfer: campaign → project PDA (treasury account)
+        // treasury_lamports counter must match actual SOL in project PDA
+        **ctx.accounts.campaign.to_account_info().try_borrow_mut_lamports()?  -= total;
+        **ctx.accounts.project.to_account_info().try_borrow_mut_lamports()?   += total;
 
         ctx.accounts.project.treasury_lamports += total;
 
@@ -473,7 +597,7 @@ pub struct CreateCampaign<'info> {
         init,
         payer = creator,
         space = 8 + std::mem::size_of::<CampaignAccount>(),
-        seeds = [b"campaign", creator.key().as_ref(), &project.campaign_count.to_le_bytes()],
+        seeds = [b"campaign", creator.key().as_ref(), &project_index.to_le_bytes(), &project.campaign_count.to_le_bytes()],
         bump,
     )]
     pub campaign: AccountLoader<'info, CampaignAccount>,
@@ -551,6 +675,19 @@ pub struct ClaimPrize<'info> {
 }
 
 #[derive(Accounts)]
+pub struct PushPrize<'info> {
+    #[account(mut)]
+    pub campaign: AccountLoader<'info, CampaignAccount>,
+    /// CHECK: winner address - receives funds. No signature required.
+    #[account(mut)]
+    pub winner: AccountInfo<'info>,
+    #[account(mut)]
+    pub initiator: Signer<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+
+#[derive(Accounts)]
 pub struct RouteNoWinner<'info> {
     #[account(mut)]
     pub campaign: AccountLoader<'info, CampaignAccount>,
@@ -559,8 +696,7 @@ pub struct RouteNoWinner<'info> {
     #[account(mut)]
     pub project: Account<'info, ProjectAccount>,
 
-    /// CHECK: validated against campaign.creator in instruction handler
-    #[account(mut)]
+    /// CHECK: validated against campaign.creator in instruction handler — identity check only
     pub project_creator: AccountInfo<'info>,
 
     pub system_program: Program<'info, System>,
@@ -578,6 +714,76 @@ pub struct WithdrawTreasury<'info> {
 
     #[account(mut)]
     pub creator: Signer<'info>,
+}
+
+#[derive(Accounts)]
+#[instruction(position_index: u8)]
+pub struct CreatePositionVault<'info> {
+    pub campaign: AccountLoader<'info, CampaignAccount>,
+
+    #[account(
+        init,
+        payer = payer,
+        space = 8 + 32 + 32 + 8 + 1 + 1 + 6, // disc + fields + alignment padding = 88
+        seeds = [b"vault", campaign.key().as_ref(), &[position_index], recipient.key().as_ref()],
+        bump,
+    )]
+    pub position_vault: Account<'info, PositionVault>,
+
+    /// CHECK: address that will own the position — used only as seed component
+    pub recipient: AccountInfo<'info>,
+
+    #[account(mut)]
+    pub payer: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[instruction(position_index: u8)]
+pub struct SweepPositionVault<'info> {
+    #[account(mut)]
+    pub campaign: AccountLoader<'info, CampaignAccount>,
+
+    #[account(
+        mut,
+        seeds = [b"vault", campaign.key().as_ref(), &[position_index], recipient.key().as_ref()],
+        bump = position_vault.bump,
+        close = sweeper,   // remaining rent → sweeper after price moved to campaign
+    )]
+    pub position_vault: Account<'info, PositionVault>,
+
+    /// CHECK: validated against position_vault.recipient in instruction handler
+    pub recipient: AccountInfo<'info>,
+
+    #[account(mut)]
+    pub sweeper: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[instruction(position_index: u8)]
+pub struct RefundPositionVault<'info> {
+    pub campaign: AccountLoader<'info, CampaignAccount>,
+
+    #[account(
+        mut,
+        seeds = [b"vault", campaign.key().as_ref(), &[position_index], recipient.key().as_ref()],
+        bump = position_vault.bump,
+        close = recipient,  // all lamports (payment + rent) → recipient
+    )]
+    pub position_vault: Account<'info, PositionVault>,
+
+    /// CHECK: validated against position_vault.recipient — receives all funds on close
+    #[account(mut)]
+    pub recipient: AccountInfo<'info>,
+
+    /// Anyone can trigger a refund (watcher, recipient, or creator)
+    #[account(mut)]
+    pub initiator: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
 }
 
 // ─── Errors ───────────────────────────────────────────────────────────────────

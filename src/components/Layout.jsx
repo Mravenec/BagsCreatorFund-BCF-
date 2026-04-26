@@ -3,6 +3,7 @@ import { Outlet, Link, useLocation } from 'react-router-dom';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { useWalletModal } from '@solana/wallet-adapter-react-ui';
 import { shortAddr } from '../lib/solana.js';
+import { IS_MAINNET, NETWORK } from '../lib/constants.js';
 
 const NAV = [
   { to: '/',               label: 'Home'       },
@@ -19,10 +20,16 @@ export default function Layout() {
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
 
-      {/* DevNet banner */}
-      <div style={{ background: 'rgba(167,139,250,.08)', borderBottom: '1px solid rgba(167,139,250,.18)', padding: '5px 24px', textAlign: 'center', fontSize: '.73rem', color: 'var(--purple)', fontWeight: 600, letterSpacing: '.06em' }}>
-        🔧 SOLANA DEVNET — Use faucet SOL for testing. No real funds at risk.
-      </div>
+      {/* Network banner */}
+      {IS_MAINNET ? (
+        <div style={{ background: 'rgba(52,211,153,.08)', borderBottom: '1px solid rgba(52,211,153,.18)', padding: '5px 24px', textAlign: 'center', fontSize: '.73rem', color: 'var(--green)', fontWeight: 600, letterSpacing: '.06em' }}>
+          🟢 SOLANA MAINNET — Real SOL. Campaigns, positions, and treasury reinvestment are live.
+        </div>
+      ) : (
+        <div style={{ background: 'rgba(167,139,250,.08)', borderBottom: '1px solid rgba(167,139,250,.18)', padding: '5px 24px', textAlign: 'center', fontSize: '.73rem', color: 'var(--purple)', fontWeight: 600, letterSpacing: '.06em' }}>
+          🔧 SOLANA DEVNET — Free faucet SOL for testing. No real funds at risk.
+        </div>
+      )}
 
       {/* Nav */}
       <nav style={{ position: 'sticky', top: 0, zIndex: 100, background: 'rgba(11,17,32,.94)', backdropFilter: 'blur(16px)', borderBottom: '1px solid var(--border)', height: '58px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 28px' }}>
@@ -37,7 +44,14 @@ export default function Layout() {
               Bags<span style={{ color: 'var(--accent)' }}>Creator</span>Fund
             </span>
           </div>
-          <span className="badge badge-devnet" style={{ fontSize: '.6rem' }}>devnet</span>
+          <span style={{
+            fontSize: '.6rem', fontWeight: 700, padding: '2px 7px', borderRadius: '4px',
+            background: IS_MAINNET ? 'rgba(52,211,153,.12)' : 'rgba(167,139,250,.12)',
+            color: IS_MAINNET ? 'var(--green)' : 'var(--purple)',
+            border: `1px solid ${IS_MAINNET ? 'rgba(52,211,153,.3)' : 'rgba(167,139,250,.3)'}`,
+          }}>
+            {NETWORK}
+          </span>
         </Link>
 
         {/* Links */}
@@ -57,7 +71,7 @@ export default function Layout() {
           {connected ? (
             <>
               <div style={{ padding: '6px 12px', background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 'var(--r)', fontSize: '.75rem', color: 'var(--text2)', fontFamily: 'var(--mono)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--green)', display: 'inline-block' }} />
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: IS_MAINNET ? 'var(--green)' : '#a78bfa', display: 'inline-block' }} />
                 {shortAddr(publicKey?.toBase58())}
               </div>
               <button className="btn btn-ghost btn-sm" onClick={disconnect}>Disconnect</button>
@@ -81,7 +95,9 @@ export default function Layout() {
         <div style={{ display: 'flex', gap: '18px', fontSize: '.76rem', color: 'var(--text3)' }}>
           <a href="https://bags.fm" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--text2)' }}>bags.fm</a>
           <a href="https://docs.bags.fm" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--text2)' }}>API Docs</a>
-          <span>Solana DevNet</span>
+          <span style={{ color: IS_MAINNET ? 'var(--green)' : 'var(--purple)', fontWeight: 600 }}>
+            Solana {IS_MAINNET ? 'Mainnet' : 'DevNet'}
+          </span>
         </div>
       </footer>
     </div>

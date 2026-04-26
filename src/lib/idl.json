@@ -239,7 +239,7 @@
         },
         {
           "name": "projectCreator",
-          "isMut": true,
+          "isMut": false,
           "isSigner": false
         },
         {
@@ -268,6 +268,114 @@
         {
           "name": "amountLamports",
           "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "createPositionVault",
+      "accounts": [
+        {
+          "name": "campaign",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "positionVault",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "recipient",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "payer",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "systemProgram",
+          "isMut": false,
+          "isSigner": false
+        }
+      ],
+      "args": [
+        {
+          "name": "positionIndex",
+          "type": "u8"
+        }
+      ]
+    },
+    {
+      "name": "sweepPositionVault",
+      "accounts": [
+        {
+          "name": "campaign",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "positionVault",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "recipient",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "sweeper",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "systemProgram",
+          "isMut": false,
+          "isSigner": false
+        }
+      ],
+      "args": [
+        {
+          "name": "positionIndex",
+          "type": "u8"
+        }
+      ]
+    },
+    {
+      "name": "refundPositionVault",
+      "accounts": [
+        {
+          "name": "campaign",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "positionVault",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "recipient",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "initiator",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "systemProgram",
+          "isMut": false,
+          "isSigner": false
+        }
+      ],
+      "args": [
+        {
+          "name": "positionIndex",
+          "type": "u8"
         }
       ]
     }
@@ -450,6 +558,34 @@
                 100
               ]
             }
+          }
+        ]
+      }
+    },
+    {
+      "name": "PositionVault",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "campaign",
+            "type": "publicKey"
+          },
+          {
+            "name": "recipient",
+            "type": "publicKey"
+          },
+          {
+            "name": "priceLamports",
+            "type": "u64"
+          },
+          {
+            "name": "positionIndex",
+            "type": "u8"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
           }
         ]
       }
@@ -737,6 +873,6 @@
     }
   ],
   "metadata": {
-    "address": "D9KdRFUG4mZ3gqgDSF8mdfDpJk7qKHsmDn8g3dRsvfBV"
+    "address": "ELarLMHYVxR2TndqEc6kHUSvwRyZUPHJ5BHFcD7yQtcJ"
   }
 }

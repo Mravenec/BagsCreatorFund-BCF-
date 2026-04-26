@@ -84,15 +84,34 @@ echo -e "${GREEN}✓ Wallet: $(solana address)${NC}"
 
 echo ""
 echo -e "${YELLOW}[3/6] Checking SOL balance...${NC}"
+
+# First: close any orphaned deploy buffers to recover locked SOL
+echo "  Recovering SOL from any orphaned deploy buffers..."
+solana program close --buffers --quiet 2>/dev/null && echo -e "  ${GREEN}✓ Buffers closed${NC}" || true
+sleep 2
+
 BALANCE_SOL=$(solana balance 2>/dev/null | awk '{print $1}')
 echo "Current balance: ${BALANCE_SOL} SOL"
+
 if python3 -c "import sys; sys.exit(0 if float('${BALANCE_SOL:-0}') >= 3.0 else 1)" 2>/dev/null; then
   echo -e "${GREEN}✓ Sufficient${NC}"
 else
-  echo -e "${YELLOW}Requesting airdrops...${NC}"
-  solana airdrop 2 && sleep 3; solana airdrop 2 && sleep 3
+  echo -e "${YELLOW}Balance low — requesting DevNet airdrops...${NC}"
+  for i in 1 2 3; do
+    solana airdrop 2 2>/dev/null && echo "  +2 SOL" && sleep 8 || true
+    BALANCE_SOL=$(solana balance 2>/dev/null | awk '{print $1}')
+    python3 -c "import sys; sys.exit(0 if float('${BALANCE_SOL:-0}') >= 3.0 else 1)" 2>/dev/null && break
+  done
 fi
-echo -e "${GREEN}✓ Balance: $(solana balance 2>/dev/null)${NC}"
+
+BALANCE_SOL=$(solana balance 2>/dev/null | awk '{print $1}')
+echo -e "${GREEN}✓ Balance: ${BALANCE_SOL} SOL${NC}"
+if ! python3 -c "import sys; sys.exit(0 if float('${BALANCE_SOL:-0}') >= 2.5 else 1)" 2>/dev/null; then
+  echo -e "${RED}✗ Still insufficient. Visit https://faucet.solana.com and airdrop to:${NC}"
+  echo -e "  ${CYAN}$(solana address)${NC}"
+  echo -e "${RED}  Then re-run this script.${NC}"
+  exit 1
+fi
 
 # ─── Copy workspace to Linux filesystem ────────────────────────────────────────
 echo ""
@@ -181,18 +200,64 @@ echo -e "  ${GREEN}✓ Program ID: $PROGRAM_ID${NC}"
 
 # Patch Program ID into all source files
 echo "  Patching Program ID..."
+
+# 1. Rust: declare_id! in lib.rs
 for f in \
   "$BUILD_DIR/programs/bags-creator-fund/src/lib.rs" \
   "$ANCHOR_DIR/programs/bags-creator-fund/src/lib.rs"; do
   [ -f "$f" ] && sed -i "s/declare_id!(\"[^\"]*\")/declare_id!(\"$PROGRAM_ID\")/" "$f"
 done
+
+# 2. Anchor.toml
 for f in "$BUILD_DIR/Anchor.toml" "$ANCHOR_DIR/Anchor.toml"; do
   [ -f "$f" ] && sed -i "s/bags-creator-fund = \"[^\"]*\"/bags-creator-fund = \"$PROGRAM_ID\"/" "$f"
 done
-[ -f "$PROJECT_ROOT/src/lib/programClient.js" ] && sed -i \
-  -e "s/new PublicKey('[^']*')/new PublicKey('$PROGRAM_ID')/" \
-  -e "s/new PublicKey(\"[^\"]*\")/new PublicKey(\"$PROGRAM_ID\")/" \
-  "$PROJECT_ROOT/src/lib/programClient.js"
+
+# 3. Update .env with new DEVNET Program ID so constants.js picks it up
+ENV_FILE="$PROJECT_ROOT/.env"
+if [ -f "$ENV_FILE" ]; then
+  if grep -q "VITE_BCF_PROGRAM_ID_DEVNET" "$ENV_FILE"; then
+    sed -i "s|VITE_BCF_PROGRAM_ID_DEVNET=.*|VITE_BCF_PROGRAM_ID_DEVNET=$PROGRAM_ID|" "$ENV_FILE"
+  else
+    echo "VITE_BCF_PROGRAM_ID_DEVNET=$PROGRAM_ID" >> "$ENV_FILE"
+  fi
+  echo -e "  ${GREEN}✓ .env VITE_BCF_PROGRAM_ID_DEVNET = $PROGRAM_ID${NC}"
+else
+  # Create .env if it doesn't exist
+  cat > "$ENV_FILE" << ENVEOF
+VITE_BAGS_API_KEY=bags_prod_NvTYIGgjDiUlNIYgRf3M0PcSL9XvGlYCGrEcrPvADrA
+VITE_BAGS_API_BASE=https://public-api-v2.bags.fm/api/v1
+VITE_SOLANA_RPC=https://api.devnet.solana.com
+VITE_NETWORK=devnet
+VITE_BCF_PROGRAM_ID_DEVNET=$PROGRAM_ID
+ENVEOF
+  echo -e "  ${GREEN}✓ .env created with VITE_BCF_PROGRAM_ID_DEVNET = $PROGRAM_ID${NC}"
+fi
+
+# 4. Patch the hardcoded fallback in constants.js so it also works without .env
+CONSTANTS_FILE="$PROJECT_ROOT/src/lib/constants.js"
+if [ -f "$CONSTANTS_FILE" ]; then
+  # Update both the devnet fallback AND mainnet comment placeholder
+  sed -i "s#|| '[A-Za-z0-9]*'; // update after mainnet deploy#|| '$PROGRAM_ID'; // update after mainnet deploy#g" "$CONSTANTS_FILE"
+  # Update the devnet fallback specifically
+  python3 << PYEOF
+import re
+with open('$CONSTANTS_FILE', 'r') as f:
+    c = f.read()
+# Replace the devnet fallback string
+c = re.sub(
+    r"(BCF_PROGRAM_ID_DEVNET\s*=\s*import\.meta\.env\.VITE_BCF_PROGRAM_ID_DEVNET\s*\|\| ')[A-Za-z0-9]+'",
+    r"\g<1>$PROGRAM_ID'",
+    c
+)
+with open('$CONSTANTS_FILE', 'w') as f:
+    f.write(c)
+print("  constants.js fallback → $PROGRAM_ID")
+PYEOF
+  echo -e "  ${GREEN}✓ constants.js fallback updated${NC}"
+fi
+
+# 5. Update IDL metadata
 python3 << PYEOF
 import json, os
 p = "$PROJECT_ROOT/src/lib/idl.json"
@@ -252,12 +317,34 @@ echo ""
 echo -e "${GREEN}╔══════════════════════════════════════════════════════════════╗${NC}"
 echo -e "${GREEN}║              DEPLOYMENT COMPLETE ✓                          ║${NC}"
 echo -e "${GREEN}╚══════════════════════════════════════════════════════════════╝${NC}"
+# 7. Launching Dual-Engine (Watcher + Frontend)
+echo -e "${GREEN}  Program ID : ${CYAN}$PROGRAM_ID${NC}"
+echo -e "${GREEN}  Network    : ${CYAN}$NETWORK${NC}"
+echo -e "${GREEN}────────────────────────────────────────────────────────────────${NC}"
 echo ""
-echo -e "  Program ID : ${CYAN}$PROGRAM_ID${NC}"
-echo -e "  Explorer   : ${CYAN}https://explorer.solana.com/address/$PROGRAM_ID?cluster=devnet${NC}"
+
+# 7. Launching Dual-Engine (Watcher + Frontend)
+echo -e "${YELLOW}🚀 Launching Services...${NC}"
+
+# Find node
+NODE_BIN=$(command -v node || which node || echo "node")
+
+# Set environment variables
+export VITE_SOLANA_RPC="$RPC_URL"
+export BCF_PROGRAM_ID="$PROGRAM_ID"
+
+# Start Watcher in background
+echo -e "  Starting Watcher with $NODE_BIN..."
+$NODE_BIN scripts/watcher.mjs > watcher.log 2>&1 &
+WATCHER_PID=$!
+
+# Cleanup on exit
+trap "kill $WATCHER_PID 2>/dev/null || true; exit" SIGINT SIGTERM EXIT
+
+echo -e "${GREEN}✓ Watcher is running (PID: $WATCHER_PID)${NC}"
+echo -e "  Logs: tail -f watcher.log"
 echo ""
-echo -e "${YELLOW}Launching frontend...${NC}"
+
+echo -e "${YELLOW}Launching Frontend...${NC}"
 cd "$PROJECT_ROOT"
-npm install --legacy-peer-deps --engine-strict=false 2>&1 | \
-  grep -E "^(added|removed|changed|audited|npm ERR)" || true
 npm run dev

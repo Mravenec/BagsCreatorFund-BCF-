@@ -8,10 +8,12 @@ import {
   resolveCampaignOnChain, claimPrizeOnChain, routeToTreasuryOnChain,
   campaignAccountToDisplay, getProgram, fetchProject,
   fmtPos, posStatus, totalPot, timeLeft, isExpired,
+  getVaultPDA, createPositionVaultOnChain, sweepPositionVaultOnChain,
 } from "../lib/programClient.js";
 import { AnchorProvider } from "@coral-xyz/anchor";
-import { toUSDC, TOKENS_PER_SOL, TREASURY_FEE_PCT } from "../lib/constants.js";
+import { toUSDC, TOKENS_PER_SOL, TREASURY_FEE_PCT, BCF_PROGRAM_ID } from "../lib/constants.js";
 import { shortAddr, explorerTx, getSOLBalance, requestAirdrop } from "../lib/solana.js";
+import { IS_MAINNET, NETWORK } from "../lib/constants.js";
 import { bagsTokenUrl } from "../lib/bags.js";
 import { useToast } from "../components/Toast.jsx";
 
@@ -177,7 +179,7 @@ function DepositModal({ campaign, connection, onClose, onActivated }) {
                     <span style={{ color:"var(--text3)" }}>Your balance</span>
                     <div style={{ display:"flex", alignItems:"center", gap:"10px" }}>
                       <span style={{ fontFamily:"var(--mono)", fontWeight:700, color:balance<needed?"var(--danger)":"var(--text)" }}>{balance.toFixed(4)} SOL</span>
-                      {balance<needed && <button className="btn btn-ghost btn-sm" onClick={handleAirdrop} style={{ fontSize:".72rem", padding:"4px 10px" }}>☁️ Airdrop</button>}
+                      {balance<needed && !IS_MAINNET && <button className="btn btn-ghost btn-sm" onClick={handleAirdrop} style={{ fontSize:".72rem", padding:"4px 10px" }}>☁️ Airdrop</button>}
                     </div>
                   </div>
                 )}
@@ -185,12 +187,12 @@ function DepositModal({ campaign, connection, onClose, onActivated }) {
                   {sending?<span style={{ display:"flex", alignItems:"center", gap:"8px", justifyContent:"center" }}><span className="spin">⟳</span> Confirming...</span>
                     :connected?`⚡ Deposit ${needed} SOL`:"🔌 Connect Wallet First"}
                 </button>
-                {connected && wallet && <p style={{ textAlign:"center", fontSize:".7rem", color:"var(--text3)" }}>{wallet.adapter.name} · Solana DevNet</p>}
+                {connected && wallet && <p style={{ textAlign:"center", fontSize:".7rem", color:"var(--text3)" }}>{wallet.adapter.name} · Solana {IS_MAINNET?"Mainnet":"DevNet"}</p>}
               </div>
             ) : (
               <div style={{ display:"flex", flexDirection:"column", gap:"12px" }}>
                 <div style={{ padding:"10px 14px", background:"rgba(56,189,248,.06)", border:"1px solid rgba(56,189,248,.18)", borderRadius:"var(--r)", fontSize:".78rem", color:"var(--accent)", lineHeight:1.55 }}>
-                  Works with any DevNet address, Phantom on a different device, or any exchange on mainnet.
+                  Works from any exchange (Binance, Coinbase) or any Solana wallet. Send SOL directly — no memo needed.
                 </div>
                 {[
                   { label:"Send to address", value:campaign.creatorWallet, key:"dep-addr", accent:false },
@@ -210,11 +212,11 @@ function DepositModal({ campaign, connection, onClose, onActivated }) {
                   Withdraw → SOL → Solana network → paste address → add memo → amount <strong style={{ color:"var(--accent)" }}>{needed} SOL</strong>
                 </div>
                 {!polling
-                  ? <button className="btn btn-secondary btn-full" onClick={()=>{setPolling(true);toast("Monitoring DevNet for deposit...","info");}}>✓ I sent {needed} SOL — Monitor now</button>
+                  ? <button className="btn btn-secondary btn-full" onClick={()=>{setPolling(true);toast("Monitoring for deposit...","info");}}>✓ I sent {needed} SOL — Monitor now</button>
                   : <div style={{ display:"flex", alignItems:"center", gap:"12px", padding:"13px 15px", background:"rgba(56,189,248,.07)", border:"1px solid rgba(56,189,248,.2)", borderRadius:"var(--r)" }}>
                       <span className="spin">⟳</span>
                       <div>
-                        <div style={{ fontWeight:600, fontSize:".85rem", color:"var(--accent)" }}>Scanning DevNet... ({pollCount}/72)</div>
+                        <div style={{ fontWeight:600, fontSize:".85rem", color:"var(--accent)" }}>Scanning {IS_MAINNET?"Mainnet":"DevNet"}... ({pollCount}/72)</div>
                         <div style={{ fontSize:".7rem", color:"var(--text3)" }}>Every 5s · max 6 min</div>
                       </div>
                     </div>
@@ -252,11 +254,8 @@ function ParticipateModal({ campaign, positionIndex, connection, onClose, onSucc
     if (connected && publicKey) getSOLBalance(publicKey.toBase58()).then(setBalance);
   }, [connected, publicKey]);
 
-  const pollCount = usePollIncoming({
-    active: polling && !done, connection,
-    address: campaign.creatorWallet, expectedLamports: lamports,
-    onFound: ({ signature, sender }) => complete(signature, sender, "exchange"),
-  });
+  // (Legacy pollCount removed in favor of VaultCEXTab specialized polling)
+
 
   async function handleAirdrop() {
     try {
@@ -376,7 +375,7 @@ function ParticipateModal({ campaign, positionIndex, connection, onClose, onSucc
                     <span style={{ color:"var(--text3)" }}>Your balance</span>
                     <div style={{ display:"flex", alignItems:"center", gap:"10px" }}>
                       <span style={{ fontFamily:"var(--mono)", fontWeight:700, color:balance<price?"var(--danger)":"var(--text)" }}>{balance.toFixed(4)} SOL</span>
-                      {balance<price && <button className="btn btn-ghost btn-sm" onClick={handleAirdrop} style={{ fontSize:".72rem", padding:"4px 10px" }}>☁️ Airdrop</button>}
+                      {balance<price && !IS_MAINNET && <button className="btn btn-ghost btn-sm" onClick={handleAirdrop} style={{ fontSize:".72rem", padding:"4px 10px" }}>☁️ Airdrop</button>}
                     </div>
                   </div>
                 )}
@@ -384,45 +383,359 @@ function ParticipateModal({ campaign, positionIndex, connection, onClose, onSucc
                   {sending?<span style={{ display:"flex", alignItems:"center", gap:"8px", justifyContent:"center" }}><span className="spin">⟳</span> Confirming...</span>
                     :connected?`⚡ Participate — Position #${fmtPos(positionIndex)}`:"🔌 Connect Wallet First"}
                 </button>
-                {connected && wallet && <p style={{ textAlign:"center", fontSize:".7rem", color:"var(--text3)" }}>{wallet.adapter.name} · Solana DevNet</p>}
+                {connected && wallet && <p style={{ textAlign:"center", fontSize:".7rem", color:"var(--text3)" }}>{wallet.adapter.name} · Solana {IS_MAINNET?"Mainnet":"DevNet"}</p>}
               </div>
             ) : (
-              <div style={{ display:"flex", flexDirection:"column", gap:"12px" }}>
-                <div style={{ padding:"10px 14px", background:"rgba(56,189,248,.06)", border:"1px solid rgba(56,189,248,.18)", borderRadius:"var(--r)", fontSize:".78rem", color:"var(--accent)", lineHeight:1.55 }}>
-                  Send SOL from Binance, Coinbase, or any DevNet address. Include the memo to link your payment to position #{fmtPos(positionIndex)}.
-                </div>
-                {[
-                  { label:"Send to address", value:campaign.creatorWallet, key:"pos-addr", accent:false },
-                  { label:"Memo / Tag (required)", value:memo, key:"pos-memo", accent:true },
-                ].map(({label,value,key,accent})=>(
-                  <div key={key}>
-                    <div style={{ fontSize:".7rem", color:"var(--text3)", marginBottom:"5px" }}>{label}</div>
-                    <div style={{ display:"flex", alignItems:"center", gap:"8px", padding:"10px 13px", background:"var(--bg2)", border:"1px solid var(--border2)", borderRadius:"var(--r)" }}>
-                      <span style={{ flex:1, fontFamily:"var(--mono)", fontSize:accent?".88rem":".72rem", fontWeight:accent?700:400, color:accent?"var(--accent)":"var(--text2)", wordBreak:"break-all", letterSpacing:accent?".06em":"0" }}>{value}</span>
-                      <button className="btn btn-ghost btn-sm" onClick={()=>copy(value,key)}>{copied===key?"✓":"Copy"}</button>
-                    </div>
-                    {key.includes("memo") && <p style={{ fontSize:".7rem", color:"var(--warning)", marginTop:"4px" }}>⚠️ Without memo, position #{fmtPos(positionIndex)} cannot be assigned</p>}
-                  </div>
-                ))}
-                <div style={{ padding:"11px 14px", background:"var(--bg2)", border:"1px solid var(--border2)", borderRadius:"var(--r)", fontSize:".79rem", color:"var(--text2)", lineHeight:1.65 }}>
-                  Amount: <strong style={{ color:"var(--accent)", fontFamily:"var(--mono)" }}>{price} SOL</strong> · Include memo exactly as shown
-                </div>
-                {!polling
-                  ? <button className="btn btn-secondary btn-full" onClick={()=>{setPolling(true);toast("Monitoring DevNet...","info");}}>✓ I sent {price} SOL — Monitor now</button>
-                  : <div style={{ display:"flex", alignItems:"center", gap:"12px", padding:"13px 15px", background:"rgba(56,189,248,.07)", border:"1px solid rgba(56,189,248,.2)", borderRadius:"var(--r)" }}>
-                      <span className="spin">⟳</span>
-                      <div>
-                        <div style={{ fontWeight:600, fontSize:".85rem", color:"var(--accent)" }}>Scanning DevNet... ({pollCount}/72)</div>
-                        <div style={{ fontSize:".7rem", color:"var(--text3)" }}>Every 5s · keep this open</div>
-                      </div>
-                    </div>
-                }
-              </div>
+              <VaultCEXTab
+                campaign={campaign}
+                positionIndex={positionIndex}
+                price={price}
+                lamports={lamports}
+                connection={connection}
+                anchorWallet={anchorWallet}
+                toast={toast}
+                copied={copied}
+                copy={copy}
+                onSuccess={onSuccess}
+                onClose={onClose}
+              />
             )}
           </>
         )}
       </div>
     </div>
+  );
+}
+
+
+function VaultCEXTab({ campaign, positionIndex, price, lamports, connection,
+                       anchorWallet, toast, copied, copy, onSuccess, onClose }) {
+  const [recipientAddr, setRecipientAddr]   = useState('');
+  const [addrError,     setAddrError]       = useState('');
+  const [vaultPDA,      setVaultPDA]        = useState(null);
+  const [vaultBalance,  setVaultBalance]    = useState(0);
+  const [creating,      setCreating]        = useState(false);
+  const [sweeping,      setSweeping]        = useState(false);
+  const [swept,         setSwept]           = useState(false);
+  const [polling,       setPolling]         = useState(false);
+  const [isChecking,    setIsChecking]      = useState(false);
+  const [lastChecked,   setLastChecked]     = useState(null);
+
+  // Defensive check
+  if (!campaign || positionIndex === undefined) return null;
+
+
+  // Derive vault PDA whenever recipientAddr changes
+  function handleAddrChange(v) {
+    setRecipientAddr(v);
+    setVaultPDA(null);
+    setAddrError('');
+    if (!v) return;
+    try {
+      // PublicKey is imported at top level; getVaultPDA handles string→PublicKey conversion
+      const [pda] = getVaultPDA(campaign.pda, positionIndex, v);
+      setVaultPDA(pda.toBase58());
+    } catch {
+      setAddrError('Invalid Solana address');
+    }
+  }
+
+  // Hybrid Polling: Check balance, account existence, and position state
+  const checkStatus = async () => {
+    if (!vaultPDA || swept) return;
+    setIsChecking(true);
+    try {
+      console.log(`[BCF-CEX] Checking status for pos#${positionIndex} at ${vaultPDA}`);
+      
+      // 1. Check Vault Balance
+      const vPub = new PublicKey(vaultPDA);
+      const bal = await connection.getBalance(vPub);
+      setVaultBalance(bal);
+      console.log(`[BCF-CEX] Balance: ${bal / 1e9} SOL (Expected: ${price} SOL)`);
+
+      // 2. Check if Vault Account is initialized
+      const accInfo = await connection.getAccountInfo(vPub);
+      // The vault should be owned by our BCF program
+      const isProgramOwned = accInfo && accInfo.owner.toBase58() === BCF_PROGRAM_ID;
+      
+      console.log(`[BCF-CEX] Vault exists: ${!!accInfo}, Program owned: ${isProgramOwned}`);
+
+
+      // 3. Check if position was already filled
+      const mockWallet = { publicKey: new PublicKey("11111111111111111111111111111111") };
+      const provider = new AnchorProvider(connection, mockWallet, { commitment: "confirmed" });
+      const account = await fetchCampaign(provider, campaign.pda);
+      
+      const currentOwner = account?.positions[positionIndex].owner?.toBase58();
+      console.log(`[BCF-CEX] Current position owner: ${currentOwner || 'None'}`);
+
+      if (currentOwner === recipientAddr) {
+        console.log(`[BCF-CEX] Success! Position secured by ${recipientAddr}`);
+        setSwept(true);
+        onSuccess(campaignAccountToDisplay(campaign.pda, account));
+        toast(`✓ Position #${fmtPos(positionIndex)} secured!`, "success");
+        setTimeout(onClose, 2000);
+      } else if (bal >= lamports && !isProgramOwned) {
+        console.log(`[BCF-CEX] Funds detected but vault not initialized (Step 2 missing)`);
+      }
+    } catch (e) {
+      console.error("[BCF-CEX] Status check failed:", e);
+    } finally {
+      setIsChecking(false);
+      setLastChecked(Date.now());
+    }
+  };
+
+
+  useEffect(() => {
+    if (!polling || !vaultPDA || swept) return;
+    const interval = setInterval(checkStatus, 8000);
+    return () => clearInterval(interval);
+  }, [polling, vaultPDA, swept, recipientAddr]);
+
+  async function handleManualCheck() {
+    if (!vaultPDA) return;
+    toast("Checking payment status...", "info");
+    await checkStatus();
+  }
+
+
+  const vaultReady = vaultBalance >= lamports && vaultPDA;
+
+  // Determine current step (1-4) for UI progress
+  const currentStep = swept ? 4 : vaultReady ? 3 : vaultPDA ? 2 : 1;
+  const fmtPos = (i) => String(i).padStart(2, '0');
+
+
+  async function handleCreateVault() {
+    if (!anchorWallet) {
+      toast('Automatic vault initialization is handled by the platform. Just send SOL!', 'info');
+      return;
+    }
+    if (!vaultPDA)     { toast('Enter a valid recipient address first', 'error'); return; }
+    setCreating(true);
+    try {
+      const provider = new AnchorProvider(connection, anchorWallet, { commitment: 'confirmed' });
+      await createPositionVaultOnChain(provider, {
+        campaignPDA:   campaign.pda,
+        positionIndex,
+        recipient:     recipientAddr,
+      });
+      toast('Vault created! Now send exactly ' + price + ' SOL to the address below', 'success');
+      setPolling(true);
+    } catch(e) {
+      const m = e.message || '';
+      if (m.includes('PositionTaken'))     toast('Position already taken', 'error');
+      else if (m.includes('already in use')) {
+        toast('Vault already exists — proceed to payment', 'info');
+        setPolling(true);
+      }
+      else if (m.includes('rejected'))     toast('Cancelled', 'info');
+      else                                 toast('Create vault failed: ' + m.slice(0,80), 'error');
+    } finally { setCreating(false); }
+  }
+
+
+  async function handleSweep() {
+    if (!anchorWallet) {
+      toast('The watcher service will confirm this automatically. No action needed!', 'info');
+      return;
+    }
+    setSweeping(true);
+    try {
+      const provider = new AnchorProvider(connection, anchorWallet, { commitment: 'confirmed' });
+      const { account } = await sweepPositionVaultOnChain(provider, {
+        campaignPDA:   campaign.pda,
+        positionIndex,
+        recipient:     recipientAddr,
+      });
+      setSwept(true);
+      toast('Position #' + String(positionIndex).padStart(2,'0') + ' confirmed on-chain!', 'success');
+      onSuccess({ account, positionIndex });
+      setTimeout(onClose, 2000);
+    } catch(e) {
+      const m = e.message || '';
+      if (m.includes('InsufficientFunds')) toast('Vault balance still too low — wait for funds', 'error');
+      else if (m.includes('PositionTaken')) toast('Position was taken by someone else', 'error');
+      else                                  toast('Sweep failed: ' + m.slice(0,80), 'error');
+    } finally { setSweeping(false); }
+  }
+
+
+  if (swept) {
+    return (
+      <div style={{ 
+        padding: '30px 20px', 
+        background: 'rgba(52, 211, 153, 0.05)', 
+        border: '1px solid rgba(52, 211, 153, 0.2)', 
+        borderRadius: 'var(--r)', 
+        textAlign: 'center'
+      }}>
+        <div style={{ fontSize: '3rem', marginBottom: '15px' }}>🎉</div>
+        <h3 style={{ color: 'var(--green)', marginBottom: '10px' }}>Position Secured!</h3>
+        <p style={{ fontSize: '.85rem', color: 'var(--text2)', lineHeight: 1.5, marginBottom: '20px' }}>
+          Congratulations! Position <strong>#{fmtPos(positionIndex)}</strong> is now officially yours on the blockchain.
+        </p>
+        <div style={{ padding: '12px', background: 'var(--bg2)', borderRadius: 'var(--r)', border: '1px solid var(--border2)', marginBottom: '20px', textAlign: 'left' }}>
+          <div style={{ fontSize: '.65rem', color: 'var(--text3)', textTransform: 'uppercase', marginBottom: '4px' }}>Owner Address</div>
+          <div style={{ fontSize: '.75rem', fontFamily: 'var(--mono)', color: 'var(--accent)', wordBreak: 'break-all' }}>{recipientAddr}</div>
+        </div>
+        <button className="btn btn-primary btn-full" onClick={() => window.location.reload()}>
+          View in Dashboard
+        </button>
+      </div>
+    );
+  }
+
+
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:'16px' }}>
+      
+      {/* 1. Progress Steps Indicator */}
+      {!swept && (
+        <div style={{ display:'flex', justifyContent:'space-between', marginBottom:'8px', padding:'0 10px' }}>
+          {[1, 2, 3, 4].map(step => (
+            <div key={step} style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:'4px', opacity: currentStep >= step ? 1 : 0.3 }}>
+              <div style={{ 
+                width:'24px', height:'24px', borderRadius:'50%', background: currentStep > step ? 'var(--green)' : currentStep === step ? 'var(--accent)' : 'var(--bg3)',
+                color: currentStep >= step ? '#fff' : 'var(--text3)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'.7rem', fontWeight:700,
+                border: currentStep === step ? '2px solid rgba(56,189,248,.3)' : 'none', transition:'all .3s ease'
+              }}>
+                {currentStep > step ? '✓' : step}
+              </div>
+              <div style={{ fontSize:'.55rem', color:'var(--text3)', fontWeight:600, textTransform:'uppercase', letterSpacing:'0.5px' }}>
+                {step === 1 ? 'Address' : step === 2 ? 'Vault' : step === 3 ? 'Pay' : 'Secure'}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div style={{ padding:'10px 14px', background:'rgba(56,189,248,.06)', border:'1px solid rgba(56,189,248,.18)', borderRadius:'var(--r)', fontSize:'.78rem', color:'var(--accent)', lineHeight:1.55 }}>
+        <strong>No Wallet Needed:</strong> Each position has a unique vault address. Send SOL from any exchange — our watcher service handles the rest.
+      </div>
+
+      {/* Step 1: Address */}
+      <div style={{ opacity: currentStep > 1 ? 0.7 : 1 }}>
+        <div style={{ fontSize:'.7rem', color:'var(--text3)', marginBottom:'5px' }}>Step 1 — Your Solana address (will receive the position)</div>
+        <input
+          type="text"
+          value={recipientAddr}
+          onChange={e => handleAddrChange(e.target.value)}
+          placeholder="Enter your Solana wallet address…"
+          style={{ width:'100%', padding:'10px 13px', background:'var(--bg2)', border:'1px solid var(--border2)', borderRadius:'var(--r)', fontFamily:'var(--mono)', fontSize:'.75rem', color:'var(--text)', boxSizing:'border-box' }}
+          disabled={!!vaultPDA}
+        />
+        {addrError && <p style={{ fontSize:'.7rem', color:'var(--danger)', marginTop:'4px' }}>{addrError}</p>}
+      </div>
+
+      {/* Step 2: Vault Setup */}
+      {!vaultPDA && (
+        <div style={{ display:'flex', flexDirection:'column', gap:'8px' }}>
+          <button className="btn btn-secondary btn-full" onClick={handleCreateVault} disabled={creating}>
+            {creating ? <span><span className="spin">⟳</span> Creating vault…</span> : anchorWallet ? '📦 Step 2 — Initialize Vault (Optional)' : '📦 Step 2 — Automatic Vault Setup'}
+          </button>
+          {!anchorWallet && (
+            <p style={{ fontSize:'.68rem', color:'var(--text3)', textAlign:'center' }}>
+              No wallet connected? No problem. The system will auto-initialize once SOL is sent.
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Step 3: Vault Address */}
+      {vaultPDA && !vaultReady && (
+        <div>
+          <div style={{ fontSize:'.7rem', color:'var(--text3)', marginBottom:'5px' }}>
+            Step 3 — Send exactly <strong style={{ color:'var(--accent)' }}>{price} SOL</strong> to this address
+          </div>
+          <div style={{ display:'flex', alignItems:'center', gap:'8px', padding:'10px 13px', background:'var(--bg2)', border:'1px solid var(--border2)', borderRadius:'var(--r)' }}>
+            <span style={{ flex:1, fontFamily:'var(--mono)', fontSize:'.72rem', color:'var(--text2)', wordBreak:'break-all' }}>{vaultPDA}</span>
+            <button className="btn btn-ghost btn-sm" onClick={() => copy(vaultPDA, 'vault-addr')}>{copied==='vault-addr'?'✓':'Copy'}</button>
+          </div>
+          <p style={{ fontSize:'.7rem', color:'var(--text3)', marginTop:'4px' }}>
+            ✅ No memo required — this address is unique to position #{fmtPos(positionIndex)}
+          </p>
+        </div>
+      )}
+
+      {/* Payment Status Feedbacks */}
+      {vaultPDA && (
+        <div style={{ marginTop: '4px' }}>
+          <div style={{ 
+            padding:'12px 16px', 
+            background: vaultReady ? 'rgba(52,211,153,.08)' : 'rgba(56,189,248,.05)', 
+            border:`1px solid ${vaultReady?'rgba(52,211,153,.3)':'rgba(56,189,248,.18)'}`, 
+            borderRadius:'var(--r)', 
+            display:'flex', 
+            alignItems:'center', 
+            gap:'12px' 
+          }}>
+            {vaultReady ? (
+              <span style={{ fontSize: '1.2rem' }}>✅</span>
+            ) : (
+              <span className={`spin ${!polling ? 'paused' : ''}`} style={{ fontSize: '1.2rem' }}>⟳</span>
+            )}
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight:600, fontSize:'.85rem', color: vaultReady ? 'var(--green)' : 'var(--accent)' }}>
+                {vaultReady ? 'Payment Detected & Reserved!' : polling ? 'Awaiting payment...' : 'Waiting for monitor...'}
+              </div>
+              <div style={{ fontSize:'.72rem', color:'var(--text3)', lineHeight: 1.3 }}>
+                {vaultReady 
+                  ? 'Your funds are locked. Our system is assigning this position to you now.' 
+                  : `Currently: ${(vaultBalance / 1e9).toFixed(4)} / ${price} SOL`}
+              </div>
+            </div>
+            {lastChecked && (
+              <div style={{ fontSize: '.65rem', color: 'var(--text3)', textAlign: 'right' }}>
+                Synced {new Date(lastChecked).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+              </div>
+            )}
+          </div>
+
+          {!vaultReady && (
+            <button 
+              className="btn btn-ghost btn-full" 
+              onClick={handleManualCheck} 
+              disabled={isChecking || !vaultPDA}
+              style={{ marginTop: '8px', fontSize: '.75rem', height: '32px' }}
+            >
+              {isChecking ? 'Checking...' : 'Check Payment Now'}
+            </button>
+          )}
+
+          {vaultReady && !anchorWallet && (
+             <div style={{ marginTop: '10px', padding: '10px', background: 'rgba(52,211,153,.08)', border: '1px solid rgba(52,211,153,.2)', borderRadius: 'var(--r)', fontSize: '.75rem', color: 'var(--green)', lineHeight: 1.5, textAlign: 'center' }}>
+               💰 <strong>Payment detected!</strong><br/>
+               Our system is securing your position on-chain. This usually takes 10-30 seconds. You can safely close this window.
+             </div>
+          )}
+        </div>
+      )}
+
+      {/* Prize Info */}
+      <div style={{ padding: '12px', background: 'rgba(255, 193, 7, 0.05)', border: '1px solid rgba(255, 193, 7, 0.2)', borderRadius: 'var(--r)', fontSize: '0.75rem', color: 'var(--text2)', marginTop: '4px' }}>
+        <strong>🏆 Prize Information:</strong><br />
+        If you win, the prize will be automatically sent to your recipient address. No additional action or wallet required.
+      </div>
+
+      {/* Final Step Button (Only if wallet connected) */}
+      {vaultReady && anchorWallet && (
+        <div style={{ marginTop: '12px' }}>
+          <button className="btn btn-primary btn-full" onClick={handleSweep} disabled={sweeping}>
+            {sweeping ? <span><span className="spin">⟳</span> Securing...</span> : `⚡ Step 4 — Secure Position #${fmtPos(positionIndex)}`}
+          </button>
+        </div>
+      )}
+
+      <p style={{ fontSize:'.69rem', color:'var(--text3)', textAlign:'center', lineHeight:1.5, marginTop: '8px' }}>
+        {polling 
+          ? "Monitoring active. The system will auto-confirm once funds are detected."
+          : "Manual check available if auto-monitoring is paused."}
+      </p>
+    </div>
+
+
   );
 }
 
@@ -665,7 +978,7 @@ export default function CampaignPage() {
           <div>
             <div style={{ display:"flex", alignItems:"center", gap:"8px", marginBottom:"12px", flexWrap:"wrap" }}>
               {statusBadge}
-              <span className="badge badge-devnet">DevNet</span>
+              <span style={{ fontSize:".6rem", fontWeight:700, padding:"2px 7px", borderRadius:"4px", background: IS_MAINNET?"rgba(52,211,153,.12)":"rgba(167,139,250,.12)", color: IS_MAINNET?"var(--green)":"var(--purple)", border:`1px solid ${IS_MAINNET?"rgba(52,211,153,.3)":"rgba(167,139,250,.3)"}` }}>{IS_MAINNET?"Mainnet":"DevNet"}</span>
               {token?.symbol && <span className="badge badge-bags">${token.symbol}</span>}
             </div>
 

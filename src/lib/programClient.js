@@ -14,9 +14,10 @@ import {
 } from '@solana/web3.js';
 import IDL from './idl.json';
 import { getBagsToken } from './bags.js';
+import { BCF_PROGRAM_ID } from './constants.js';
 
-// ─── Program ID ────────────────────────────────────────────────────────────────
-export const PROGRAM_ID = new PublicKey('D9KdRFUG4mZ3gqgDSF8mdfDpJk7qKHsmDn8g3dRsvfBV');
+// ─── Program ID (network-aware: devnet vs mainnet) ────────────────────────────
+export const PROGRAM_ID = new PublicKey(BCF_PROGRAM_ID);
 /** Verify the on-chain program exists at PROGRAM_ID (useful for debugging) */
 export async function verifyProgram(connection) {
   try {
@@ -61,12 +62,24 @@ export function getProjectPDA(creator, projectIndex) {
   );
 }
 
-/** Campaign PDA — indexed globally per creator (not per project) */
-export function getCampaignPDA(creator, campaignIndex) {
-  const pub = typeof creator === 'string' ? new PublicKey(creator) : creator;
-  const idx = new BN(campaignIndex).toArrayLike(Buffer, 'le', 8);
+/** Campaign PDA — scoped per (creator × projectIndex × campaignIndex) */
+export function getCampaignPDA(creator, projectIndex, campaignIndex) {
+  const pub  = typeof creator === 'string' ? new PublicKey(creator) : creator;
+  const pIdx = new BN(projectIndex).toArrayLike(Buffer, 'le', 8);
+  const cIdx = new BN(campaignIndex).toArrayLike(Buffer, 'le', 8);
   return PublicKey.findProgramAddressSync(
-    [Buffer.from('campaign'), pub.toBuffer(), idx],
+    [Buffer.from('campaign'), pub.toBuffer(), pIdx, cIdx],
+    PROGRAM_ID
+  );
+}
+
+
+/** Vault PDA — one per (campaign × positionIndex × recipient) */
+export function getVaultPDA(campaignPDA, positionIndex, recipient) {
+  const camp = typeof campaignPDA === 'string' ? new PublicKey(campaignPDA) : campaignPDA;
+  const rec  = typeof recipient   === 'string' ? new PublicKey(recipient)   : recipient;
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from('vault'), camp.toBuffer(), Buffer.from([positionIndex]), rec.toBuffer()],
     PROGRAM_ID
   );
 }
@@ -150,7 +163,7 @@ export async function createCampaignOnChain(provider, {
   const [projectPDA] = getProjectPDA(creator, projectIndex);
   const projectAccount = await program.account.projectAccount.fetch(projectPDA);
   const campaignIndex  = projectAccount.campaignCount.toNumber();
-  const [campaignPDA]  = getCampaignPDA(creator, campaignIndex);
+  const [campaignPDA]  = getCampaignPDA(creator, projectIndex, campaignIndex);
 
   const tx = await program.methods
     .createCampaign(
@@ -273,6 +286,23 @@ export async function claimPrizeOnChain(provider, { campaignPDA }) {
   return { tx };
 }
 
+/** Push prize to winner (no winner signature needed) */
+export async function pushPrizeOnChain(provider, { campaignPDA, winnerAddr }) {
+  const program   = getProgram(provider);
+  const initiator = provider.wallet.publicKey;
+  const tx = await program.methods
+    .pushPrize()
+    .accounts({
+      campaign:      new PublicKey(campaignPDA),
+      winner:        new PublicKey(winnerAddr),
+      initiator,
+      systemProgram: SystemProgram.programId,
+    })
+    .rpc({ commitment: 'confirmed' });
+  return { tx };
+}
+
+
 /** Route unclaimed prize to project treasury */
 export async function routeToTreasuryOnChain(provider, { campaignPDA }) {
   const program  = getProgram(provider);
@@ -314,6 +344,80 @@ export async function withdrawTreasuryOnChain(provider, { projectIndex, amountLa
 
   const updated = await program.account.projectAccount.fetch(projectPDA);
   return { tx, project: updated };
+}
+
+
+/** Create a position vault PDA for a CEX/exchange user.
+ *  Anyone (payer) can pay the rent. Returns the vault PDA address. */
+export async function createPositionVaultOnChain(provider, { campaignPDA, positionIndex, recipient, payer }) {
+  const program = getProgram(provider);
+  const campPub = new PublicKey(campaignPDA);
+  const recPub  = new PublicKey(recipient);
+  const payPub  = (payer && new PublicKey(payer)) || provider.wallet.publicKey;
+
+  const [vaultPDA] = getVaultPDA(campPub, positionIndex, recPub);
+
+  const tx = await program.methods
+    .createPositionVault(positionIndex)
+    .accounts({
+      campaign:      campPub,
+      positionVault: vaultPDA,
+      recipient:     recPub,
+      payer:         payPub,
+      systemProgram: SystemProgram.programId,
+    })
+    .rpc({ commitment: 'confirmed' });
+
+  return { tx, vaultPDA: vaultPDA.toBase58() };
+}
+
+/** Sweep a funded vault into the campaign (assigns position on-chain).
+ *  Closes vault — remaining rent goes to sweeper/caller. */
+export async function sweepPositionVaultOnChain(provider, { campaignPDA, positionIndex, recipient }) {
+  const program  = getProgram(provider);
+  const campPub  = new PublicKey(campaignPDA);
+  const recPub   = new PublicKey(recipient);
+  const sweeper  = provider.wallet.publicKey;
+
+  const [vaultPDA] = getVaultPDA(campPub, positionIndex, recPub);
+
+  const tx = await program.methods
+    .sweepPositionVault(positionIndex)
+    .accounts({
+      campaign:      campPub,
+      positionVault: vaultPDA,
+      recipient:     recPub,
+      sweeper,
+      systemProgram: SystemProgram.programId,
+    })
+    .rpc({ commitment: 'confirmed' });
+
+  const account = await program.account.campaignAccount.fetch(campPub);
+  return { tx, account };
+}
+
+/** Refund a vault — returns all SOL to the recipient.
+ *  Anyone can trigger (watcher, creator, recipient). */
+export async function refundPositionVaultOnChain(provider, { campaignPDA, positionIndex, recipient }) {
+  const program   = getProgram(provider);
+  const campPub   = new PublicKey(campaignPDA);
+  const recPub    = new PublicKey(recipient);
+  const initiator = provider.wallet.publicKey;
+
+  const [vaultPDA] = getVaultPDA(campPub, positionIndex, recPub);
+
+  const tx = await program.methods
+    .refundPositionVault(positionIndex)
+    .accounts({
+      campaign:      campPub,
+      positionVault: vaultPDA,
+      recipient:     recPub,
+      initiator,
+      systemProgram: SystemProgram.programId,
+    })
+    .rpc({ commitment: 'confirmed' });
+
+  return { tx };
 }
 
 // ─── Read helpers ─────────────────────────────────────────────────────────────

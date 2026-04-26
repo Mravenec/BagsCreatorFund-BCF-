@@ -1,7 +1,23 @@
-// ─── SOL price reference (DevNet demo — production use Pyth oracle) ──────────
-export const SOL_PRICE_USDC = 145; // 1 SOL ≈ $145 USDC (update as needed)
+// ─── Network detection ────────────────────────────────────────────────────────
+export const NETWORK     = import.meta.env.VITE_NETWORK    || 'devnet';
+export const IS_MAINNET  = NETWORK === 'mainnet';
+export const IS_DEVNET   = !IS_MAINNET;
+
+// ─── SOL price reference (live fetch in bags.js; this is the fallback) ────────
+export const SOL_PRICE_USDC = 145;
 export const toUSDC   = (sol)  => (Number(sol) * SOL_PRICE_USDC).toFixed(2);
 export const fromUSDC = (usdc) => (Number(usdc) / SOL_PRICE_USDC).toFixed(4);
+
+// ─── Native mint addresses ────────────────────────────────────────────────────
+export const SOL_MINT    = 'So11111111111111111111111111111111111111112'; // wrapped SOL
+export const USDC_MINT   = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+
+// ─── BCF program IDs (patched by deploy.sh) ──────────────────────────────────
+export const BCF_PROGRAM_ID_DEVNET   = import.meta.env.VITE_BCF_PROGRAM_ID_DEVNET
+  || 'ELarLMHYVxR2TndqEc6kHUSvwRyZUPHJ5BHFcD7yQtcJ';
+export const BCF_PROGRAM_ID_MAINNET  = import.meta.env.VITE_BCF_PROGRAM_ID_MAINNET
+  || 'ELarLMHYVxR2TndqEc6kHUSvwRyZUPHJ5BHFcD7yQtcJ'; // update after mainnet deploy
+export const BCF_PROGRAM_ID          = IS_MAINNET ? BCF_PROGRAM_ID_MAINNET : BCF_PROGRAM_ID_DEVNET;
 
 // ─── Treasury config ──────────────────────────────────────────────────────────
 export const TREASURY_FEE_PCT = 2; // 2% of each position sale → treasury
@@ -10,10 +26,6 @@ export const TREASURY_FEE_PCT = 2; // 2% of each position sale → treasury
 export const TOKENS_PER_SOL = 1_000_000; // 1 SOL = 1M project tokens
 
 // ─── Bags fee modes ──────────────────────────────────────────────────────────
-// Source: docs.bags.fm/how-to-guides/customize-token-fees
-// These UUIDs are the real fee mode IDs from the Bags platform.
-// At runtime the app fetches live fee modes from /api/v1/token-launch/fee-modes;
-// these constants are the fallback if that request fails.
 export const FEE_MODES = [
   {
     id: 'fa29606e-5e48-4c37-827f-4b03d58ee23d',
@@ -27,7 +39,7 @@ export const FEE_MODES = [
     id: 'd16d3585-6488-4a6c-9a6f-e6c39ca0fda3',
     name: 'Low Early / High After',
     short: '0.25% → 1%',
-    desc: '0.25% during bonding curve to attract early volume, then 1% after graduation with compounding.',
+    desc: '0.25% during bonding curve to attract early volume, then 1% after graduation.',
     creatorEarns: '~0.5% per trade',
     recommended: false,
   },
@@ -68,4 +80,4 @@ export const DURATIONS = [
   { value: 168, label: '7 days'         },
 ];
 
-export const TOTAL_POSITIONS = 100; // always 00–99
+export const TOTAL_POSITIONS = 100;
