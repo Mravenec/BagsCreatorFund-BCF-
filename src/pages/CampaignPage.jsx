@@ -420,6 +420,7 @@ function VaultCEXTab({ campaign, positionIndex, price, lamports, connection,
   const [polling,       setPolling]         = useState(false);
   const [isChecking,    setIsChecking]      = useState(false);
   const [lastChecked,   setLastChecked]     = useState(null);
+  const [autoStatus,    setAutoStatus]      = useState('');   // describes what auto-action is happening
 
   // Defensive check
   if (!campaign || positionIndex === undefined) return null;
@@ -440,46 +441,115 @@ function VaultCEXTab({ campaign, positionIndex, price, lamports, connection,
     }
   }
 
-  // Hybrid Polling: Check balance, account existence, and position state
+  // Auto-sweep helper: initialise vault if needed, then sweep
+  const autoSweep = async (vPub, isProgramOwned) => {
+    if (!anchorWallet) return; // watcher handles this when no wallet connected
+    if (sweeping || swept) return;
+    setSweeping(true);
+    try {
+      const provider = new AnchorProvider(connection, anchorWallet, { commitment: 'confirmed' });
+
+      // Step A: create vault on-chain if SOL arrived before vault was initialised
+      if (!isProgramOwned) {
+        setAutoStatus('Initialising vault...');
+        console.log('[BCF-CEX] Vault not yet program-owned — creating vault account');
+        try {
+          await createPositionVaultOnChain(provider, {
+            campaignPDA:   campaign.pda,
+            positionIndex,
+            recipient:     recipientAddr,
+          });
+          console.log('[BCF-CEX] Vault account created');
+        } catch (ce) {
+          const cm = ce.message || '';
+          // "already in use" means vault was just created between our check and now — fine
+          if (!cm.includes('already in use') && !cm.includes('custom program error: 0x0')) throw ce;
+          console.log('[BCF-CEX] Vault already exists, continuing...');
+        }
+      }
+
+      // Step B: sweep — moves SOL from vault → campaign, assigns position, closes vault
+      setAutoStatus('Assigning position on-chain...');
+      console.log('[BCF-CEX] Sweeping vault → campaign');
+      const { account } = await sweepPositionVaultOnChain(provider, {
+        campaignPDA:   campaign.pda,
+        positionIndex,
+        recipient:     recipientAddr,
+      });
+
+      setSwept(true);
+      setAutoStatus('');
+      const posStr = String(positionIndex).padStart(2, '0');
+      toast(`✅ Position #${posStr} confirmed on-chain!`, 'success');
+      onSuccess({ account, positionIndex });
+      setTimeout(onClose, 2500);
+    } catch (e) {
+      setAutoStatus('');
+      const m = e.message || '';
+      if (m.includes('PositionTaken')) {
+        toast('Position was taken by someone else while processing', 'error');
+      } else if (m.includes('InsufficientFunds')) {
+        toast('Vault balance still below required amount', 'error');
+      } else if (!m.includes('rejected')) {
+        toast('Auto-sweep failed: ' + m.slice(0, 80), 'error');
+        console.error('[BCF-CEX] Auto-sweep error:', e);
+      }
+    } finally {
+      setSweeping(false);
+    }
+  };
+
+  // Full status check: reads balance, detects funds, triggers autoSweep automatically
   const checkStatus = async () => {
     if (!vaultPDA || swept) return;
     setIsChecking(true);
     try {
       console.log(`[BCF-CEX] Checking status for pos#${positionIndex} at ${vaultPDA}`);
-      
-      // 1. Check Vault Balance
+
+      // 1. Balance check
       const vPub = new PublicKey(vaultPDA);
-      const bal = await connection.getBalance(vPub);
+      const bal  = await connection.getBalance(vPub);
       setVaultBalance(bal);
-      console.log(`[BCF-CEX] Balance: ${bal / 1e9} SOL (Expected: ${price} SOL)`);
+      console.log(`[BCF-CEX] Balance: ${(bal / 1e9).toFixed(4)} SOL (need: ${price} SOL)`);
 
-      // 2. Check if Vault Account is initialized
-      const accInfo = await connection.getAccountInfo(vPub);
-      // The vault should be owned by our BCF program
+      // 2. Account ownership check
+      const accInfo       = await connection.getAccountInfo(vPub);
       const isProgramOwned = accInfo && accInfo.owner.toBase58() === BCF_PROGRAM_ID;
-      
-      console.log(`[BCF-CEX] Vault exists: ${!!accInfo}, Program owned: ${isProgramOwned}`);
+      console.log(`[BCF-CEX] Vault exists: ${!!accInfo}, Program-owned: ${isProgramOwned}`);
 
+      // 3. Check if position already filled (watcher may have completed it)
+      const mockWallet = { publicKey: new PublicKey('11111111111111111111111111111111') };
+      const provider   = new AnchorProvider(connection, mockWallet, { commitment: 'confirmed' });
+      const account    = await fetchCampaign(provider, campaign.pda);
+      const currentOwner = account?.positions[positionIndex]?.owner?.toBase58();
+      console.log(`[BCF-CEX] Position owner on-chain: ${currentOwner || 'none'}`);
 
-      // 3. Check if position was already filled
-      const mockWallet = { publicKey: new PublicKey("11111111111111111111111111111111") };
-      const provider = new AnchorProvider(connection, mockWallet, { commitment: "confirmed" });
-      const account = await fetchCampaign(provider, campaign.pda);
-      
-      const currentOwner = account?.positions[positionIndex].owner?.toBase58();
-      console.log(`[BCF-CEX] Current position owner: ${currentOwner || 'None'}`);
-
-      if (currentOwner === recipientAddr) {
-        console.log(`[BCF-CEX] Success! Position secured by ${recipientAddr}`);
+      if (currentOwner && currentOwner !== '11111111111111111111111111111111' &&
+          currentOwner === recipientAddr) {
+        // Already confirmed (watcher did it, or previous sweep succeeded)
+        console.log('[BCF-CEX] Position already secured!');
         setSwept(true);
         onSuccess(campaignAccountToDisplay(campaign.pda, account));
-        toast(`✓ Position #${fmtPos(positionIndex)} secured!`, "success");
+        toast(`✅ Position #${String(positionIndex).padStart(2,'0')} secured!`, 'success');
         setTimeout(onClose, 2000);
-      } else if (bal >= lamports && !isProgramOwned) {
-        console.log(`[BCF-CEX] Funds detected but vault not initialized (Step 2 missing)`);
+        return;
+      }
+
+      // 4. Funds present but position not yet assigned → trigger auto-sweep
+      if (bal >= lamports && !swept) {
+        if (anchorWallet) {
+          console.log('[BCF-CEX] Funds detected — triggering auto-sweep');
+          setAutoStatus('Payment detected — assigning position...');
+          // Don't await here so setIsChecking(false) fires; autoSweep manages its own state
+          autoSweep(vPub, isProgramOwned);
+        } else {
+          // No wallet connected: watcher handles it; just show "detected" state
+          console.log('[BCF-CEX] Funds detected — waiting for watcher (no wallet)');
+          setAutoStatus('');
+        }
       }
     } catch (e) {
-      console.error("[BCF-CEX] Status check failed:", e);
+      console.error('[BCF-CEX] Status check failed:', e);
     } finally {
       setIsChecking(false);
       setLastChecked(Date.now());
@@ -678,11 +748,21 @@ function VaultCEXTab({ campaign, positionIndex, price, lamports, connection,
             )}
             <div style={{ flex: 1 }}>
               <div style={{ fontWeight:600, fontSize:'.85rem', color: vaultReady ? 'var(--green)' : 'var(--accent)' }}>
-                {vaultReady ? 'Payment Detected & Reserved!' : polling ? 'Awaiting payment...' : 'Waiting for monitor...'}
+                {autoStatus
+                  ? autoStatus
+                  : sweeping
+                  ? 'Assigning position on-chain...'
+                  : vaultReady
+                  ? (anchorWallet ? 'Payment detected — assigning...' : 'Payment detected — watcher confirming...')
+                  : polling
+                  ? 'Awaiting payment...'
+                  : 'Waiting for monitor...'}
               </div>
               <div style={{ fontSize:'.72rem', color:'var(--text3)', lineHeight: 1.3 }}>
-                {vaultReady 
-                  ? 'Your funds are locked. Our system is assigning this position to you now.' 
+                {vaultReady
+                  ? (sweeping || autoStatus
+                      ? 'Do not close this window — transaction in progress'
+                      : 'Funds confirmed. Position is being secured.')
                   : `Currently: ${(vaultBalance / 1e9).toFixed(4)} / ${price} SOL`}
               </div>
             </div>
@@ -705,10 +785,19 @@ function VaultCEXTab({ campaign, positionIndex, price, lamports, connection,
           )}
 
           {vaultReady && !anchorWallet && (
-             <div style={{ marginTop: '10px', padding: '10px', background: 'rgba(52,211,153,.08)', border: '1px solid rgba(52,211,153,.2)', borderRadius: 'var(--r)', fontSize: '.75rem', color: 'var(--green)', lineHeight: 1.5, textAlign: 'center' }}>
-               💰 <strong>Payment detected!</strong><br/>
-               Our system is securing your position on-chain. This usually takes 10-30 seconds. You can safely close this window.
-             </div>
+            <div style={{ marginTop:'10px', padding:'12px', background:'rgba(52,211,153,.08)', border:'1px solid rgba(52,211,153,.2)', borderRadius:'var(--r)', fontSize:'.78rem', color:'var(--green)', lineHeight:1.5, textAlign:'center' }}>
+              💰 <strong>Payment detected!</strong><br/>
+              <span style={{ color:'var(--text2)', fontSize:'.75rem' }}>
+                The watcher service will assign your position automatically within ~15 seconds.
+                Connect your wallet if you want instant confirmation.
+              </span>
+            </div>
+          )}
+          {vaultReady && anchorWallet && (sweeping || autoStatus) && (
+            <div style={{ marginTop:'10px', padding:'12px', background:'rgba(139,92,246,.08)', border:'1px solid rgba(139,92,246,.2)', borderRadius:'var(--r)', fontSize:'.78rem', color:'#a78bfa', lineHeight:1.5, textAlign:'center', display:'flex', alignItems:'center', justifyContent:'center', gap:'8px' }}>
+              <span className="spin">⟳</span>
+              <span>{autoStatus || 'Assigning position on-chain...'} Do not close this window.</span>
+            </div>
           )}
         </div>
       )}
@@ -719,11 +808,11 @@ function VaultCEXTab({ campaign, positionIndex, price, lamports, connection,
         If you win, the prize will be automatically sent to your recipient address. No additional action or wallet required.
       </div>
 
-      {/* Final Step Button (Only if wallet connected) */}
-      {vaultReady && anchorWallet && (
-        <div style={{ marginTop: '12px' }}>
-          <button className="btn btn-primary btn-full" onClick={handleSweep} disabled={sweeping}>
-            {sweeping ? <span><span className="spin">⟳</span> Securing...</span> : `⚡ Step 4 — Secure Position #${fmtPos(positionIndex)}`}
+      {/* Fallback manual sweep button — only shown if auto-sweep stalled (no autoStatus, not sweeping, vaultReady, wallet connected) */}
+      {vaultReady && anchorWallet && !sweeping && !autoStatus && !swept && (
+        <div style={{ marginTop:'12px' }}>
+          <button className="btn btn-primary btn-full" onClick={() => { const v = new PublicKey(vaultPDA); autoSweep(v, false); }} disabled={sweeping}>
+            ⚡ Confirm Position #{String(positionIndex).padStart(2,'0')} Now
           </button>
         </div>
       )}
