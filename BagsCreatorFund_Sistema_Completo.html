@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BagsCreatorFund — Sistema Completo</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:opsz,wght@9..40,300;9..40,500;9..40,700&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#07070e;--bg2:#0e0e1c;--bg3:#141428;--bg4:#1a1a30;
+  --border:rgba(255,255,255,.06);--border2:rgba(255,255,255,.11);
+  --text:#eeedf8;--text2:#9896b8;--text3:#4f4d70;
+  --purple:#8b5cf6;--purple2:#6d28d9;--blue:#38bdf8;
+  --teal:#14b8a6;--green:#34d399;--amber:#fbbf24;
+  --coral:#fb7185;--pink:#f472b6;
+  --mono:'Space Mono',monospace;--sans:'DM Sans',sans-serif;
+  --r:10px;--rl:16px;
+}
+html{scroll-behavior:smooth}
+body{font-family:var(--sans);background:var(--bg);color:var(--text);line-height:1.72;font-size:15px;font-weight:300;overflow-x:hidden}
+body::before{content:'';position:fixed;inset:0;z-index:0;
+  background-image:linear-gradient(var(--border) 1px,transparent 1px),linear-gradient(90deg,var(--border) 1px,transparent 1px);
+  background-size:56px 56px;pointer-events:none;opacity:.55}
+body::after{content:'';position:fixed;inset:0;z-index:0;
+  background:radial-gradient(ellipse 80% 60% at 10% 0%,rgba(139,92,246,.04) 0%,transparent 60%),
+             radial-gradient(ellipse 60% 50% at 90% 80%,rgba(20,184,166,.04) 0%,transparent 60%);
+  pointer-events:none}
+.wrap{position:relative;z-index:1;max-width:920px;margin:0 auto;padding:0 28px 100px}
+h1{font-size:clamp(2.4rem,5vw,4rem);font-weight:700;letter-spacing:-.04em;line-height:1.05}
+h2{font-size:1.65rem;font-weight:700;letter-spacing:-.03em;margin-bottom:12px}
+h3{font-size:1.1rem;font-weight:700;margin-bottom:8px;color:var(--text)}
+h4{font-size:.95rem;font-weight:700;margin-bottom:4px;color:var(--text)}
+p{color:var(--text2);margin-bottom:12px}
+p:last-child{margin-bottom:0}
+strong{color:var(--text);font-weight:700}
+a{color:var(--blue);text-decoration:none}
+a:hover{text-decoration:underline}
+.sec{padding:60px 0 0}
+.sec+.sec{border-top:1px solid var(--border2);margin-top:0}
+.sec-label{font-family:var(--mono);font-size:.65rem;letter-spacing:.14em;color:var(--text3);
+  text-transform:uppercase;display:flex;align-items:center;gap:10px;margin-bottom:18px}
+.sec-label::after{content:'';flex:1;height:1px;background:var(--border2)}
+.card{background:var(--bg2);border:1px solid var(--border2);border-radius:var(--rl);padding:22px}
+.card-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px;margin-top:18px}
+.card-icon{font-size:1.6rem;margin-bottom:10px}
+.box{padding:16px 20px;border-radius:var(--r);margin:18px 0;font-size:.88rem;line-height:1.65}
+.box.purple{background:rgba(139,92,246,.07);border:1px solid rgba(139,92,246,.2);border-left:3px solid var(--purple)}
+.box.teal  {background:rgba(20,184,166,.07);border:1px solid rgba(20,184,166,.2);border-left:3px solid var(--teal)}
+.box.green {background:rgba(52,211,153,.07);border:1px solid rgba(52,211,153,.2);border-left:3px solid var(--green)}
+.box.amber {background:rgba(251,191,36,.07);border:1px solid rgba(251,191,36,.2);border-left:3px solid var(--amber)}
+.box.blue  {background:rgba(56,189,248,.07);border:1px solid rgba(56,189,248,.2);border-left:3px solid var(--blue)}
+.steps{display:flex;flex-direction:column;gap:3px;margin:18px 0}
+.step{display:flex;gap:16px;padding:14px 16px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r)}
+.step-n{width:26px;height:26px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;
+  font-family:var(--mono);font-size:.7rem;font-weight:700;
+  background:rgba(139,92,246,.12);border:1px solid rgba(139,92,246,.28);color:var(--purple)}
+.step h4{margin-bottom:3px}
+.step p{font-size:.82rem;margin:0}
+.tbl{width:100%;border-collapse:collapse;margin:16px 0;font-size:.85rem}
+.tbl th{padding:9px 13px;text-align:left;font-family:var(--mono);font-size:.62rem;letter-spacing:.08em;
+  color:var(--text3);font-weight:400;border-bottom:1px solid var(--border2)}
+.tbl td{padding:10px 13px;border-bottom:1px solid var(--border);color:var(--text2);vertical-align:top}
+.tbl tr:last-child td{border-bottom:none}
+.tbl td:first-child{color:var(--text);font-weight:500}
+.tick{color:var(--green);font-weight:700}
+.warn{color:var(--amber)}
+code{font-family:var(--mono);font-size:.8em;padding:2px 6px;background:var(--bg3);
+  border:1px solid var(--border2);border-radius:4px;color:var(--blue)}
+.codeblock{background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r);
+  padding:18px 20px;font-family:var(--mono);font-size:.78rem;line-height:1.75;
+  overflow-x:auto;margin:14px 0;color:var(--text2)}
+.codeblock .k{color:var(--purple)}.codeblock .s{color:var(--green)}
+.codeblock .c{color:var(--text3)}.codeblock .v{color:var(--blue)}.codeblock .n{color:var(--amber)}
+.diagram{background:var(--bg2);border:1px solid var(--border2);border-radius:var(--rl);
+  padding:24px 18px;margin:22px 0;overflow-x:auto}
+.diagram svg{display:block;width:100%;height:auto}
+.badge{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:5px;
+  font-family:var(--mono);font-size:.66rem;font-weight:700}
+.badge.dev {background:rgba(139,92,246,.1);border:1px solid rgba(139,92,246,.28);color:var(--purple)}
+.badge.main{background:rgba(52,211,153,.1);border:1px solid rgba(52,211,153,.28);color:var(--green)}
+.accent{color:var(--purple)}
+.muted{color:var(--text2)}
+.mono{font-family:var(--mono);font-size:.82em;color:var(--text3)}
+.cols2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:16px}
+@media(max-width:600px){.cols2{grid-template-columns:1fr}}
+.hero{padding:80px 0 56px;border-bottom:1px solid var(--border2)}
+.hero-tag{display:inline-flex;align-items:center;gap:8px;padding:5px 14px;
+  border-radius:100px;background:rgba(139,92,246,.09);border:1px solid rgba(139,92,246,.22);
+  font-family:var(--mono);font-size:.68rem;color:var(--purple);margin-bottom:24px;letter-spacing:.08em}
+.hero-tag span{width:6px;height:6px;border-radius:50%;background:var(--purple);
+  animation:pulse 2s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.8)}}
+.hero-chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:28px}
+.chip{padding:4px 12px;border-radius:6px;font-size:.75rem;font-weight:500;
+  border:1px solid var(--border2);color:var(--text2);background:var(--bg2)}
+.chip.hi{border-color:rgba(139,92,246,.28);color:var(--purple);background:rgba(139,92,246,.07)}
+.flow-row{display:flex;align-items:center;gap:0;margin:18px 0;flex-wrap:wrap}
+.flow-node{padding:10px 16px;border-radius:8px;font-size:.8rem;font-weight:500;text-align:center;flex-shrink:0}
+.flow-arrow{color:var(--text3);font-size:1.1rem;padding:0 6px;flex-shrink:0}
+.fn-gray  {background:var(--bg3);border:1px solid var(--border2);color:var(--text2)}
+.fn-purple{background:rgba(139,92,246,.1);border:1px solid rgba(139,92,246,.28);color:#a78bfa}
+.fn-blue  {background:rgba(56,189,248,.08);border:1px solid rgba(56,189,248,.22);color:var(--blue)}
+.fn-teal  {background:rgba(20,184,166,.08);border:1px solid rgba(20,184,166,.22);color:var(--teal)}
+.fn-green {background:rgba(52,211,153,.08);border:1px solid rgba(52,211,153,.22);color:var(--green)}
+.fn-amber {background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.22);color:var(--amber)}
+.fn-pink  {background:rgba(244,114,182,.08);border:1px solid rgba(244,114,182,.22);color:var(--pink)}
+footer{border-top:1px solid var(--border2);margin-top:80px;padding:36px 0 16px;
+  display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:14px}
+footer span{font-size:.76rem;color:var(--text3)}
+footer strong{color:var(--text2);font-weight:500}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<!-- HERO -->
+<div class="hero">
+  <div class="hero-tag"><span></span>BAGS HACKATHON 2025</div>
+  <h1>Bags<span class="accent">Creator</span>Fund<br><span class="muted">Sistema Completo</span></h1>
+  <p style="font-size:1.05rem;max-width:580px;margin-top:18px;color:var(--text2)">
+    Un protocolo de rondas de financiamiento on-chain sobre Solana donde los creadores lanzan tokens en Bags,
+    abren campañas de funding, permiten que cualquier persona — con wallet Web3 o desde cualquier exchange (CEX) — compre posiciones,
+    y usan los fondos acumulados para reinvertir en su propio token, generando presión de compra orgánica.
+  </p>
+  <div class="hero-chips">
+    <span class="chip hi">Anchor · Rust</span>
+    <span class="chip hi">Bags SDK</span>
+    <span class="chip hi">Meteora DBC</span>
+    <span class="chip">Solana DevNet &amp; Mainnet</span>
+    <span class="chip">CEX sin memo · cualquier exchange</span>
+    <span class="chip">12 instrucciones on-chain</span>
+    <span class="chip">Watcher automático + HTTP API</span>
+  </div>
+</div>
+
+<!-- 01 OVERVIEW -->
+<div class="sec">
+<div class="sec-label">01 — Visión general</div>
+<h2>¿Qué hace BCF?</h2>
+<p>BCF conecta tres capas en un solo flujo económico coherente:</p>
+
+<div class="card-grid">
+  <div class="card">
+    <div class="card-icon">🚀</div>
+    <h3>Lanzamiento de token</h3>
+    <p>El creador genera su token directamente en <strong>Bags Mainnet</strong> (Meteora DBC) desde la interfaz, con fee-share configurado a su favor.</p>
+  </div>
+  <div class="card">
+    <div class="card-icon">🎯</div>
+    <h3>Rondas de financiamiento</h3>
+    <p>Por cada token puede abrir <strong>campañas ilimitadas</strong> donde participantes compran posiciones numeradas (00–99) con SOL real.</p>
+  </div>
+  <div class="card">
+    <div class="card-icon">🔥</div>
+    <h3>Flywheel de reinversión</h3>
+    <p>Los fondos acumulados en tesorería se usan para <strong>comprar el propio token en Bags</strong>, creando presión de compra orgánica y sostenida.</p>
+  </div>
+  <div class="card">
+    <div class="card-icon">🏦</div>
+    <h3>CEX sin fricción</h3>
+    <p>Usuarios de Binance, Coinbase, OKX, Kraken o cualquier exchange participan enviando SOL a una <strong>dirección vault única por posición</strong> — sin memo, sin wallet Web3 obligatoria.</p>
+  </div>
+</div>
+
+<div class="box purple" style="margin-top:22px">
+  <strong>El problema que resuelve:</strong> Los tokens lanzados en Bags no tienen mecanismo de presión de compra sostenida después del lanzamiento inicial. BCF crea ese motor: cada ronda de financiamiento sin ganador se convierte automáticamente en una orden de compra programada del token.
+</div>
+</div>
+
+<!-- 02 PÁGINAS -->
+<div class="sec">
+<div class="sec-label">02 — Interfaz de usuario</div>
+<h2>Cinco pantallas, un flujo completo</h2>
+
+<div class="cols2">
+  <div class="card">
+    <h3>🏠 Home</h3>
+    <p>Página de entrada. Muestra campañas activas en tiempo real, estadísticas globales y el estado de la conexión con la API de Bags.</p>
+  </div>
+  <div class="card">
+    <h3>🔍 Explore</h3>
+    <p>Catálogo completo de campañas con filtros por estado (activo, pendiente, resuelto) y categoría. Búsqueda por texto. Orden automático: activos primero.</p>
+  </div>
+  <div class="card">
+    <h3>🪙 New Token</h3>
+    <p>Flujo de 3 pasos guiado: identidad del token → estructura de fees → review y creación. Lanza en Bags Mainnet con el SDK oficial.</p>
+  </div>
+  <div class="card">
+    <h3>📊 Dashboard</h3>
+    <p>Panel del creador: todos sus tokens y campañas en un lugar. Muestra tesorería acumulada, posiciones vendidas y permite abrir nuevas rondas.</p>
+  </div>
+  <div class="card">
+    <h3>📋 Campaign Page</h3>
+    <p>Página de campaña individual. Grid de 100 posiciones (00–99), modal de participación con <strong>modo Wallet o modo CEX</strong>, y banner de ganador tras el sorteo.</p>
+  </div>
+</div>
+</div>
+
+<!-- 03 TOKEN CREATION -->
+<div class="sec">
+<div class="sec-label">03 — Creación de token</div>
+<h2>Lanzar un token en Bags desde BCF</h2>
+
+<div class="steps">
+  <div class="step">
+    <div class="step-n">1</div>
+    <div>
+      <h4>Identidad del token</h4>
+      <p>El creador ingresa nombre, símbolo, descripción e imagen. BCF llama a <code>POST /token-launch/create-token-info</code> en la API de Bags.</p>
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-n">2</div>
+    <div>
+      <h4>Configurar Fee Share</h4>
+      <p>El creador elige el modo de fee (Estándar 2%, Alto Inicial, etc.). BCF configura <code>claimersArray: [creator_wallet]</code> para que el 100% de los trading fees vaya al creador.</p>
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-n">3</div>
+    <div>
+      <h4>Firma y lanzamiento</h4>
+      <p>El usuario firma con Phantom/Solflare. El token queda vivo en Bags Mainnet en <code>bags.fm/token/&lt;mint&gt;</code>. El sistema registra el <code>mint address</code> en el contrato BCF.</p>
+    </div>
+  </div>
+</div>
+
+<div class="box teal">
+  <strong>Fallback DevNet:</strong> Si la API de Bags no responde (entorno de pruebas), el sistema usa un mint simulado y continúa creando el <code>ProjectAccount</code> on-chain. Todas las funciones de campaña funcionan normalmente para testing.
+</div>
+</div>
+
+<!-- 04 ARQUITECTURA PDA -->
+<div class="sec">
+<div class="sec-label">04 — Arquitectura on-chain</div>
+<h2>Jerarquía de cuentas (PDAs)</h2>
+
+<div class="diagram">
+<svg viewBox="0 0 860 370" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<marker id="ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+  <path d="M2 1L8 5L2 9" fill="none" stroke="#4f4d70" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</marker>
+</defs>
+<rect x="305" y="10" width="250" height="48" rx="9" fill="#0e0e1c" stroke="#2a2a4a" stroke-width="1"/>
+<text x="430" y="30" text-anchor="middle" fill="#eeedf8" font-family="'Space Mono'" font-size="11" font-weight="700">Creator Wallet</text>
+<text x="430" y="47" text-anchor="middle" fill="#4f4d70" font-family="'Space Mono'" font-size="9">YmTYQJ…ozJU</text>
+<line x1="430" y1="58" x2="430" y2="96" stroke="#2a2a4a" stroke-width="1" marker-end="url(#ar)"/>
+<text x="444" y="80" fill="#4f4d70" font-family="'DM Sans'" font-size="9">["registry", wallet]</text>
+<rect x="280" y="96" width="300" height="46" rx="9" fill="#14052e" stroke="#6d28d9" stroke-width="1"/>
+<text x="430" y="115" text-anchor="middle" fill="#8b5cf6" font-family="'Space Mono'" font-size="10" font-weight="700">Creator Registry</text>
+<text x="430" y="131" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="9">project_count: 0 → 1 → 2 → ∞</text>
+<line x1="350" y1="142" x2="165" y2="200" stroke="#2a2a4a" stroke-width="1" marker-end="url(#ar)"/>
+<line x1="430" y1="142" x2="430" y2="200" stroke="#2a2a4a" stroke-width="1" marker-end="url(#ar)"/>
+<line x1="510" y1="142" x2="695" y2="200" stroke="#2a2a4a" stroke-width="1" marker-end="url(#ar)"/>
+<text x="190" y="178" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="9">idx=0</text>
+<text x="450" y="178" fill="#4f4d70" font-family="'DM Sans'" font-size="9">idx=1</text>
+<text x="672" y="178" fill="#4f4d70" font-family="'DM Sans'" font-size="9">idx=2</text>
+<rect x="40" y="200" width="250" height="58" rx="9" fill="#081918" stroke="#0c5445" stroke-width="1"/>
+<text x="165" y="220" text-anchor="middle" fill="#14b8a6" font-family="'Space Mono'" font-size="10" font-weight="700">Project #0 (Token A)</text>
+<text x="165" y="236" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="9">treasury_lamports · campaign_count</text>
+<text x="165" y="250" text-anchor="middle" fill="#4f4d70" font-family="'Space Mono'" font-size="8">["project", wallet, 0_le8]</text>
+<rect x="305" y="200" width="250" height="58" rx="9" fill="#080f1c" stroke="#144d85" stroke-width="1"/>
+<text x="430" y="220" text-anchor="middle" fill="#38bdf8" font-family="'Space Mono'" font-size="10" font-weight="700">Project #1 (Token B)</text>
+<text x="430" y="236" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="9">treasury_lamports · campaign_count</text>
+<text x="430" y="250" text-anchor="middle" fill="#4f4d70" font-family="'Space Mono'" font-size="8">["project", wallet, 1_le8]</text>
+<rect x="570" y="200" width="250" height="58" rx="9" fill="#1a0c08" stroke="#7a3015" stroke-width="1"/>
+<text x="695" y="220" text-anchor="middle" fill="#fb923c" font-family="'Space Mono'" font-size="10" font-weight="700">Project #2 (Token C)</text>
+<text x="695" y="236" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="9">treasury_lamports · campaign_count</text>
+<text x="695" y="250" text-anchor="middle" fill="#4f4d70" font-family="'Space Mono'" font-size="8">["project", wallet, 2_le8]</text>
+<line x1="115" y1="258" x2="88" y2="310" stroke="#2a2a4a" stroke-width="1" marker-end="url(#ar)"/>
+<line x1="200" y1="258" x2="200" y2="310" stroke="#2a2a4a" stroke-width="1" marker-end="url(#ar)"/>
+<text x="82" y="292" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">c=0</text>
+<text x="214" y="292" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">c=1</text>
+<rect x="38" y="310" width="90" height="36" rx="7" fill="#0e0e1c" stroke="#2a2a4a" stroke-width="1"/>
+<text x="83" y="324" text-anchor="middle" fill="#4f4d70" font-family="'Space Mono'" font-size="8">Campaign</text>
+<text x="83" y="338" text-anchor="middle" fill="#4f4d70" font-family="'Space Mono'" font-size="8">[p=0, c=0]</text>
+<rect x="152" y="310" width="90" height="36" rx="7" fill="#0e0e1c" stroke="#2a2a4a" stroke-width="1"/>
+<text x="197" y="324" text-anchor="middle" fill="#4f4d70" font-family="'Space Mono'" font-size="8">Campaign</text>
+<text x="197" y="338" text-anchor="middle" fill="#4f4d70" font-family="'Space Mono'" font-size="8">[p=0, c=1]</text>
+<rect x="570" y="295" width="280" height="66" rx="7" fill="rgba(139,92,246,.07)" stroke="rgba(139,92,246,.2)" stroke-width="1"/>
+<text x="710" y="314" text-anchor="middle" fill="#8b5cf6" font-family="'DM Sans'" font-size="10" font-weight="700">Seeds incluyen project_index</text>
+<text x="710" y="330" text-anchor="middle" fill="#6d5f9a" font-family="'DM Sans'" font-size="9">→ Campaign [p=0, c=0] ≠ Campaign [p=1, c=0]</text>
+<text x="710" y="346" text-anchor="middle" fill="#6d5f9a" font-family="'DM Sans'" font-size="9">→ sin colisión de PDAs entre proyectos</text>
+</svg>
+</div>
+
+<div class="box blue">
+  <strong>Tesorería real:</strong> <code>treasury_lamports</code> en cada <code>ProjectAccount</code> siempre coincide con el saldo real en lamports de esa cuenta PDA. No es un contador contable — es dinero físico dentro de esa dirección on-chain.
+</div>
+</div>
+
+<!-- 05 LIFECYCLE -->
+<div class="sec">
+<div class="sec-label">05 — Ciclo de vida de una campaña</div>
+<h2>Tres estados, dos posibles destinos</h2>
+
+<div class="diagram">
+<svg viewBox="0 0 860 210" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<marker id="ar2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+  <path d="M2 1L8 5L2 9" fill="none" stroke="#4f4d70" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</marker>
+<marker id="ar-g" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+  <path d="M2 1L8 5L2 9" fill="none" stroke="#34d399" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</marker>
+<marker id="ar-p" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+  <path d="M2 1L8 5L2 9" fill="none" stroke="#8b5cf6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</marker>
+</defs>
+<rect x="20" y="72" width="140" height="60" rx="9" fill="#141428" stroke="#2a2a4a" stroke-width="1"/>
+<text x="90" y="96" text-anchor="middle" fill="#9896b8" font-family="'Space Mono'" font-size="10" font-weight="700">Pending</text>
+<text x="90" y="112" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="9">define prize + price</text>
+<text x="90" y="124" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="9">sin SOL depositado</text>
+<line x1="160" y1="102" x2="200" y2="102" stroke="#4f4d70" stroke-width="1" marker-end="url(#ar2)"/>
+<text x="180" y="94" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="9">fund</text>
+<rect x="200" y="62" width="180" height="80" rx="9" fill="#081918" stroke="#0c5445" stroke-width="1"/>
+<text x="290" y="86" text-anchor="middle" fill="#14b8a6" font-family="'Space Mono'" font-size="10" font-weight="700">Active</text>
+<text x="290" y="103" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="9">prize SOL locked in vault</text>
+<text x="290" y="118" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="9">usuarios compran posiciones</text>
+<text x="290" y="133" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="9">SOL acumula en campaign PDA</text>
+<line x1="380" y1="102" x2="420" y2="102" stroke="#4f4d70" stroke-width="1" marker-end="url(#ar2)"/>
+<text x="400" y="94" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="9">resolve</text>
+<rect x="420" y="72" width="160" height="60" rx="9" fill="#1a1008" stroke="#7a5c0a" stroke-width="1"/>
+<text x="500" y="96" text-anchor="middle" fill="#fbbf24" font-family="'Space Mono'" font-size="10" font-weight="700">Settled</text>
+<text x="500" y="112" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="9">slot hash → posición ganadora</text>
+<text x="500" y="124" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="9">determinístico, verificable</text>
+<text x="500" y="18" text-anchor="middle" fill="#7a5c0a" font-family="'DM Sans'" font-size="9" font-weight="700">Aleatoriedad on-chain · sin oracle externo</text>
+<text x="500" y="32" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="9">SlotHashes sysvar de Solana</text>
+<line x1="500" y1="38" x2="500" y2="70" stroke="#2a2a4a" stroke-width="0.8" stroke-dasharray="3 2"/>
+<path d="M580 88 L640 55" fill="none" stroke="#34d399" stroke-width="1.2" marker-end="url(#ar-g)"/>
+<text x="614" y="60" fill="#4f4d70" font-family="'DM Sans'" font-size="9">posición vendida</text>
+<rect x="640" y="28" width="190" height="48" rx="8" fill="#080f12" stroke="#1a5c3a" stroke-width="1"/>
+<text x="735" y="47" text-anchor="middle" fill="#34d399" font-family="'Space Mono'" font-size="10" font-weight="700">push_prize</text>
+<text x="735" y="63" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="9">prize + collected → winner wallet</text>
+<path d="M580 116 L640 149" fill="none" stroke="#8b5cf6" stroke-width="1.2" marker-end="url(#ar-p)"/>
+<text x="610" y="150" fill="#4f4d70" font-family="'DM Sans'" font-size="9">nadie la compró</text>
+<rect x="640" y="128" width="190" height="56" rx="8" fill="#14052e" stroke="#6d28d9" stroke-width="1"/>
+<text x="735" y="150" text-anchor="middle" fill="#8b5cf6" font-family="'Space Mono'" font-size="10" font-weight="700">→ Project Treasury</text>
+<text x="735" y="166" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="9">SOL real en Project PDA</text>
+<text x="735" y="179" text-anchor="middle" fill="#8b5cf6" font-family="'DM Sans'" font-size="9" font-weight="700">disponible para reinvertir ↑</text>
+</svg>
+</div>
+
+<div class="box amber">
+  <strong>Aleatoriedad sin oracle:</strong> <code>resolve_campaign</code> lee el <code>SlotHashes</code> sysvar de Solana — un hash del slot actual de la red. El resultado es determinístico, público, reproducible por cualquier nodo, y no depende de Chainlink ni ningún servicio externo.
+</div>
+
+<p style="margin-top:14px">El rango siempre es 00–99, <strong>incluyendo posiciones no vendidas</strong>. Eso introduce la posibilidad real de que nadie gane, lo que alimenta la tesorería del creador.</p>
+</div>
+
+<!-- 06 PARTICIPACIÓN -->
+<div class="sec">
+<div class="sec-label">06 — Formas de participar</div>
+<h2>Dos caminos de entrada</h2>
+
+<h3 style="margin-top:22px">Camino 1 — Wallet Web3 (Phantom · Solflare · Coinbase Wallet · Trust)</h3>
+<div class="flow-row">
+  <div class="flow-node fn-gray">Conecta wallet</div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-node fn-blue">Clic en posición<br><small style="font-size:.7rem">grid 00–99</small></div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-node fn-blue">Firma TX</div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-node fn-green">Posición asignada<br><small style="font-size:.7rem">inmediato on-chain</small></div>
+</div>
+
+<hr style="border:none;border-top:1px solid var(--border);margin:26px 0 20px">
+
+<h3>Camino 2 — Exchange / CEX (Binance · Coinbase · OKX · Kraken · cualquier dirección Solana)</h3>
+<p style="font-size:.87rem">Sin wallet Web3 obligatoria, sin memo. Cada posición tiene su propio vault PDA. El watcher crea el vault on-chain en cuanto el usuario ingresa su dirección, y asigna la posición automáticamente cuando el SOL llega.</p>
+
+<div class="diagram">
+<svg viewBox="0 0 860 320" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<marker id="a4" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+  <path d="M2 1L8 5L2 9" fill="none" stroke="#4f4d70" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</marker>
+<marker id="a4g" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+  <path d="M2 1L8 5L2 9" fill="none" stroke="#14b8a6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</marker>
+<marker id="a4a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+  <path d="M2 1L8 5L2 9" fill="none" stroke="#fbbf24" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</marker>
+</defs>
+<!-- Step 1: User enters address -->
+<rect x="20" y="30" width="140" height="52" rx="8" fill="#141428" stroke="#2a2a4a" stroke-width="1"/>
+<text x="90" y="51" text-anchor="middle" fill="#9896b8" font-family="'Space Mono'" font-size="9" font-weight="700">① Dirección</text>
+<text x="90" y="67" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">Usuario ingresa</text>
+<text x="90" y="78" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">su addr Solana</text>
+
+<line x1="160" y1="56" x2="195" y2="56" stroke="#4f4d70" stroke-width="1" marker-end="url(#a4)"/>
+
+<!-- Step 2: Watcher registers + pre-creates vault -->
+<rect x="195" y="10" width="210" height="92" rx="8" fill="#14052e" stroke="#6d28d9" stroke-width="1"/>
+<text x="300" y="32" text-anchor="middle" fill="#8b5cf6" font-family="'Space Mono'" font-size="9" font-weight="700">② Watcher HTTP API</text>
+<text x="300" y="49" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">POST /watch-vault</text>
+<text x="300" y="65" text-anchor="middle" fill="#8b5cf6" font-family="'DM Sans'" font-size="8" font-weight="600">Pre-crea vault on-chain</text>
+<text x="300" y="80" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">seeds: "vault" · campaign · pos · recipient</text>
+<text x="300" y="95" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">Vault PDA lista antes del pago ✓</text>
+
+<line x1="405" y1="56" x2="440" y2="56" stroke="#4f4d70" stroke-width="1" marker-end="url(#a4)"/>
+
+<!-- Step 3: Vault address shown -->
+<rect x="440" y="30" width="160" height="52" rx="8" fill="#141428" stroke="#2a2a4a" stroke-width="1"/>
+<text x="520" y="51" text-anchor="middle" fill="#9896b8" font-family="'Space Mono'" font-size="9" font-weight="700">③ Vault Address</text>
+<text x="520" y="67" text-anchor="middle" fill="#34d399" font-family="'DM Sans'" font-size="8" font-weight="700">sin memo requerido</text>
+<text x="520" y="78" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">mostrada al usuario</text>
+
+<line x1="600" y1="56" x2="640" y2="56" stroke="#4f4d70" stroke-width="1" marker-end="url(#a4)"/>
+
+<!-- Step 4: User sends SOL -->
+<rect x="640" y="30" width="190" height="52" rx="8" fill="#141428" stroke="#2a2a4a" stroke-width="1"/>
+<text x="735" y="51" text-anchor="middle" fill="#9896b8" font-family="'Space Mono'" font-size="9" font-weight="700">④ Enviar SOL</text>
+<text x="735" y="65" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">precio + buffer de fees de retiro</text>
+<text x="735" y="78" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">desde cualquier exchange</text>
+
+<!-- SOL arrives in vault -->
+<path d="M735 82 L735 150 L300 150 L300 110" fill="none" stroke="#2a2a4a" stroke-width="0.8" stroke-dasharray="3 2" marker-end="url(#a4)"/>
+<text x="520" y="145" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">⑤ SOL llega al vault</text>
+
+<!-- Fee notice box -->
+<rect x="440" y="160" width="390" height="50" rx="7" fill="rgba(251,191,36,.07)" stroke="rgba(251,191,36,.22)" stroke-width="1"/>
+<text x="635" y="181" text-anchor="middle" fill="#fbbf24" font-family="'DM Sans'" font-size="9" font-weight="700">💸 ¿Cuánto enviar desde el exchange?</text>
+<text x="635" y="197" text-anchor="middle" fill="#6d5f9a" font-family="'DM Sans'" font-size="8">Precio de posición + fee de retiro del exchange (0.001–0.02 SOL típico)</text>
+<text x="635" y="210" text-anchor="middle" fill="#6d5f9a" font-family="'DM Sans'" font-size="8">Ej: posición 0.2 SOL → enviar ≥ 0.21 SOL para cubrir fees</text>
+
+<!-- Watcher Sweep -->
+<rect x="130" y="220" width="230" height="52" rx="8" fill="#081918" stroke="#0c5445" stroke-width="1"/>
+<text x="245" y="241" text-anchor="middle" fill="#14b8a6" font-family="'Space Mono'" font-size="9" font-weight="700">⑥ Watcher — sweep (~15s)</text>
+<text x="245" y="258" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">detecta balance ≥ precio → sweepPositionVault</text>
+<text x="245" y="270" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">transfiere SOL → campaign · asigna posición</text>
+
+<line x1="360" y1="246" x2="400" y2="246" stroke="#14b8a6" stroke-width="1.2" marker-end="url(#a4g)"/>
+
+<!-- Campaign assigned -->
+<rect x="400" y="220" width="200" height="52" rx="8" fill="#080f1c" stroke="#144d85" stroke-width="1"/>
+<text x="500" y="241" text-anchor="middle" fill="#38bdf8" font-family="'Space Mono'" font-size="9" font-weight="700">⑦ Campaign Account</text>
+<text x="500" y="258" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">pos.filled=1 · pos.owner=recipientAddr</text>
+<text x="500" y="270" text-anchor="middle" fill="#34d399" font-family="'DM Sans'" font-size="8" font-weight="700">✓ Posición asignada on-chain</text>
+
+<!-- Done -->
+<line x1="600" y1="246" x2="640" y2="246" stroke="#14b8a6" stroke-width="1.2" marker-end="url(#a4g)"/>
+<rect x="640" y="220" width="80" height="52" rx="8" fill="#081918" stroke="#0c5445" stroke-width="1"/>
+<text x="680" y="243" text-anchor="middle" fill="#34d399" font-family="'Space Mono'" font-size="9" font-weight="700">✓ Done</text>
+<text x="680" y="258" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">~15–30s</text>
+
+<!-- Also with wallet connected arrow -->
+<rect x="20" y="220" width="100" height="52" rx="7" fill="rgba(56,189,248,.06)" stroke="rgba(56,189,248,.2)" stroke-width="1"/>
+<text x="70" y="241" text-anchor="middle" fill="#38bdf8" font-family="'DM Sans'" font-size="8" font-weight="600">Con wallet</text>
+<text x="70" y="255" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">autoSweep</text>
+<text x="70" y="268" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">inmediato</text>
+<line x1="120" y1="246" x2="128" y2="246" stroke="#38bdf8" stroke-width="1" marker-end="url(#a4)"/>
+</svg>
+</div>
+
+<div class="box teal">
+  <strong>Watcher — arranca automáticamente con <code>bash scripts/deploy.sh</code></strong> (DevNet) o <code>bash scripts/deploy-mainnet.sh</code> (Mainnet).<br/>
+  Para desarrollo sin re-deploy: <code>npm run dev:full</code> (Vite + watcher en paralelo).<br/><br/>
+  El <code>deploy.sh</code> espera hasta 15 s a que el endpoint <code>/health</code> responda antes de confirmar que el watcher está listo. Si el proceso falla, muestra las últimas líneas de <code>watcher.log</code> para diagnóstico.
+</div>
+<div class="box green" style="margin-top:10px">
+  <strong>Fallback automático:</strong> Si el SOL del exchange llegó al vault antes de que el watcher lo inicializara, el contrato expone <code>recordExternalPayment</code> — asigna la posición sin vault. El pago queda registrado en blockchain en cualquier caso.
+</div>
+
+<div class="box amber" style="margin-top:10px">
+  <strong>Sobre el monto a enviar:</strong> Los exchanges cobran un fee de retiro propio (generalmente 0.001–0.02 SOL) que se descuenta del saldo del usuario, no del monto enviado. Para garantizar que el vault reciba el precio completo, la UI muestra un <strong>monto recomendado = precio + buffer de 0.01 SOL</strong>. Cualquier exceso por encima del precio va al sweeper como tip.
+</div>
+</div>
+
+<!-- 07 WATCHER -->
+<div class="sec">
+<div class="sec-label">07 — Watcher automático</div>
+<h2>HTTP API + dos fases de polling</h2>
+
+<p>El watcher corre como proceso Node.js separado (<code>node scripts/watcher.mjs</code>) con su propio keypair Solana. <strong>El servidor HTTP arranca primero</strong> (antes de que Anchor inicialice) — el puerto 3001 siempre está disponible incluso durante la carga inicial.</p>
+
+<div class="box blue" style="margin-bottom:16px">
+  <strong>3 endpoints HTTP:</strong><br/>
+  <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">
+    <div><code>GET &nbsp;/health</code> — estado del servicio; responde siempre, incluso durante init. Muestra si Anchor está listo.</div>
+    <div><code>POST /watch-vault</code> — pre-crea el vault on-chain en cuanto el usuario ingresa su dirección Solana. Así el vault existe <em>antes</em> de que llegue el SOL.</div>
+    <div><code>POST /sweep-now</code> — asigna la posición CEX. El frontend lo llama automáticamente al detectar el pago, y el botón "🎯 Take My Position" sirve de fallback manual.</div>
+  </div>
+</div>
+
+<table class="tbl">
+<thead><tr><th>Fase</th><th>Descripción</th><th>Frecuencia</th></tr></thead>
+<tbody>
+<tr>
+  <td>① Sweep</td>
+  <td>Escanea todos los <code>PositionVault</code> on-chain con balance ≥ precio → <code>sweepPositionVault</code> → posición asignada, vault cerrado.</td>
+  <td>Cada 15s</td>
+</tr>
+<tr>
+  <td>② Settlement</td>
+  <td>Detecta campañas en estado Settled. Con ganador: <code>push_prize</code> → SOL al winner. Sin ganador: <code>route_no_winner_to_treasury</code> → SOL al proyecto.</td>
+  <td>Cada 15s</td>
+</tr>
+</tbody>
+</table>
+
+<div class="box green">
+  <strong>Fallback automático — <code>recordExternalPayment</code>:</strong> Si el SOL del exchange llegó al vault PDA antes de que el watcher lo inicializara, el watcher usa <code>recordExternalPayment</code>. Asigna la posición directamente sin necesitar el vault. El pago queda registrado en blockchain en cualquier caso.
+</div>
+
+<div class="box teal" style="margin-top:10px">
+  <strong>Premio CEX automático:</strong> Si la posición ganadora la compró un usuario CEX, el watcher detecta el estado Settled y llama <code>push_prize</code> automáticamente — SOL directo al <code>recipient</code>. Sin acción, sin wallet.
+</div>
+
+<div class="box purple" style="margin-top:10px">
+  <strong>💰 Modelo económico del sweeper — auto-sostenido:</strong><br/>
+  <div style="display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin-top:8px;font-size:.82rem">
+    <span style="color:var(--green);font-weight:700">+ Vault rent reclamado</span>
+    <span>~0.002 SOL por sweep (el contrato cierra el vault y devuelve el rent al sweeper)</span>
+    <span style="color:var(--green);font-weight:700">+ Tip del usuario</span>
+    <span>Exceso sobre el precio de posición (ej: usuario envía 0.21, precio 0.20 → 0.01 SOL al sweeper)</span>
+    <span style="color:var(--coral);font-weight:700">− Fee TX</span>
+    <span>~0.000005 SOL por transacción Solana</span>
+  </div>
+  <p style="font-size:.78rem;margin-top:10px;color:var(--text2)">
+    Con 0.05 SOL iniciales el sweeper puede ejecutar ~10,000 operaciones. El watcher expone un endpoint <code>GET /health</code> que muestra el accounting en tiempo real: sweeps exitosos, fees gastados, rent reclamado, tips acumulados y estimación de rentabilidad neta. El watcher pausa automáticamente si el balance baja de 0.005 SOL para no perder fees en reintentos.
+  </p>
+</div>
+</div>
+
+<!-- 08 PRIZE DELIVERY -->
+<div class="sec">
+<div class="sec-label">08 — Entrega del premio</div>
+<h2>¿Cómo le llega el premio a un usuario CEX?</h2>
+
+<div class="steps">
+  <div class="step">
+    <div class="step-n">1</div>
+    <div>
+      <h4>Posición asignada con recipient</h4>
+      <p>Al hacer sweep, el contrato registra <code>pos.owner = recipientAddr</code> on-chain. Esta es la dirección que el usuario ingresó en la UI.</p>
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-n">2</div>
+    <div>
+      <h4>Campaña resuelve (cualquiera puede llamar)</h4>
+      <p>Al vencer el deadline, cualquier usuario (o el watcher) llama <code>resolve_campaign</code>. Se lee el <code>SlotHashes</code> sysvar y se determina la posición ganadora.</p>
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-n">3</div>
+    <div>
+      <h4>Watcher detecta ganador · push_prize automático</h4>
+      <p>El watcher escanea campañas en estado Settled. Si <code>pos.filled == 1</code>, llama <code>push_prize</code>. El contrato transfiere <code>prize + total_collected</code> SOL directamente a la wallet ganadora.</p>
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-n">4</div>
+    <div>
+      <h4>Sin acción requerida del ganador</h4>
+      <p>El SOL llega automáticamente a la dirección <code>recipientAddr</code>. El usuario puede verificarlo en cualquier explorador de Solana. La UI también guarda localmente el historial de posiciones CEX.</p>
+    </div>
+  </div>
+</div>
+
+<div class="box purple">
+  <strong>Hint local + verificación on-chain:</strong> La UI guarda en <code>localStorage</code> el <code>recipientAddr</code> que el usuario ingresó al comprar por CEX (<em>solo como hint de dirección</em>). Cuando la campaña se resuelve, el banner de ganador se muestra únicamente si <code>campaign.positions[winningPosition].owner</code> on-chain coincide exactamente con ese <code>recipientAddr</code>.<br/><br/>
+  Modificar <code>localStorage</code> no tiene efecto de seguridad: el campo <code>owner</code> vive en el contrato Anchor y solo puede ser escrito por <code>sweepPositionVault</code> o <code>recordExternalPayment</code>. El blockchain es la única fuente de verdad.
+</div>
+</div>
+
+<!-- 09 PDA SEEDS -->
+<div class="sec">
+<div class="sec-label">09 — Seeds de PDAs</div>
+<h2>Derivación determinística de todas las cuentas</h2>
+
+<div class="codeblock">
+<span class="c">// 1. Creator Registry — uno por wallet creadora</span>
+<span class="k">seeds</span> = [<span class="s">"registry"</span>, creator_wallet]
+
+<span class="c">// 2. Project Account — uno por token lanzado</span>
+<span class="k">seeds</span> = [<span class="s">"project"</span>, creator_wallet, project_index_as_u64_le8]
+
+<span class="c">// 3. Campaign Account — incluye project_index → sin colisión entre tokens</span>
+<span class="k">seeds</span> = [<span class="s">"campaign"</span>, creator_wallet, project_index_le8, campaign_count_le8]
+
+<span class="c">// 4. Position Vault — único por (campaña × posición × usuario CEX)</span>
+<span class="k">seeds</span> = [<span class="s">"vault"</span>, campaign_key, position_index_byte, recipient_key]
+</div>
+
+<div class="box blue">
+  <strong>¿Por qué recipient en el vault seed?</strong> La dirección del vault es única para cada combinación de campaña, posición y usuario. Un vault para la posición #47 de la campaña A con recipient X no colisiona con el vault de la misma posición con recipient Y. Esto garantiza que cada usuario CEX tiene su propio escrow aislado.
+</div>
+</div>
+
+<!-- 10 DEVNET MAINNET -->
+<div class="sec">
+<div class="sec-label">10 — Redes</div>
+<h2>DevNet y Mainnet — mismo contrato</h2>
+
+<p>El contrato Anchor/Rust es el mismo código en ambas redes. La diferencia es únicamente el cluster y si el SOL es real.</p>
+
+<table class="tbl">
+<thead><tr><th>Característica</th><th><span class="badge dev">● DevNet</span></th><th><span class="badge main">● Mainnet</span></th></tr></thead>
+<tbody>
+<tr><td>Contrato BCF</td><td><span class="tick">✓</span> Idéntico · deploy.sh</td><td><span class="tick">✓</span> Idéntico · deploy-mainnet.sh</td></tr>
+<tr><td>Token en Bags</td><td><span class="warn">⚠</span> Simulado (mint ficticio)</td><td><span class="tick">✓</span> Bags Mainnet · Meteora DBC real</td></tr>
+<tr><td>Campañas y posiciones</td><td><span class="tick">✓</span> SOL de faucet (sin valor real) · misma mecánica</td><td><span class="tick">✓</span> SOL real</td></tr>
+<tr><td>CEX via PositionVault</td><td><span class="tick">✓</span> Funciona igual</td><td><span class="tick">✓</span> Funciona igual</td></tr>
+<tr><td>Watcher automático</td><td><span class="tick">✓</span> RPC → devnet</td><td><span class="tick">✓</span> RPC → mainnet-beta</td></tr>
+<tr><td>Aleatoriedad slot hash</td><td><span class="tick">✓</span> Slots de DevNet</td><td><span class="tick">✓</span> Slots de Mainnet</td></tr>
+<tr><td>Reinvestment flywheel</td><td><span class="warn">⚠</span> SOL sin valor en Bags</td><td><span class="tick">✓</span> Bags Trade API · compra real</td></tr>
+<tr><td>Bags trading fees</td><td>— solo en Mainnet</td><td><span class="tick">✓</span> /claim-txs/v3</td></tr>
+<tr><td>Costo de deploy</td><td><span class="tick">✓</span> Gratis (faucet)</td><td><span class="warn">~2.3 SOL real</span></td></tr>
+</tbody>
+</table>
+
+<div class="box green" style="margin-top:18px">
+  <strong>Auto-patch de Program ID:</strong> Cada vez que corres <code>deploy.sh</code> o <code>deploy-mainnet.sh</code>, el script actualiza automáticamente el <code>.env</code>, el fallback en <code>constants.js</code>, y el <code>idl.json</code> con el nuevo Program ID.
+</div>
+</div>
+
+<!-- 11 BAGS SDK -->
+<div class="sec">
+<div class="sec-label">11 — Integración Bags</div>
+<h2>SDK de Bags — 4 recursos integrados</h2>
+
+<div class="card-grid">
+  <div class="card">
+    <div class="card-icon">🚀</div>
+    <h3>Token Launch</h3>
+    <p>Flujo completo 4 pasos: <code>create-token-info</code> → <code>fee-share/config</code> → <code>create-launch-transaction</code> → firma Mainnet.</p>
+  </div>
+  <div class="card">
+    <div class="card-icon">💸</div>
+    <h3>Fee Share V2</h3>
+    <p><code>claimersArray: [creator_wallet]</code> — 100% de los fees de trading van al creador. Configurado en el lanzamiento.</p>
+  </div>
+  <div class="card">
+    <div class="card-icon">🔄</div>
+    <h3>Trade API</h3>
+    <p><code>GET /trade/quote</code> + <code>POST /trade/swap</code> para el flywheel. SOL de la tesorería → token del creador en Meteora.</p>
+  </div>
+  <div class="card">
+    <div class="card-icon">🏦</div>
+    <h3>Claim Fees</h3>
+    <p><code>POST /token-launch/claim-txs/v3</code> para reclamar ingresos de trading acumulados directamente desde el Dashboard.</p>
+  </div>
+</div>
+</div>
+
+<!-- 12 QUICKSTART -->
+<div class="sec">
+<div class="sec-label">12 — Arrancar</div>
+<h2>Inicio rápido</h2>
+
+<h3>DevNet (testing — SOL de faucet, sin costo real)</h3>
+<div class="codeblock">
+<span class="c"># 1. Instalar dependencias</span>
+npm install
+
+<span class="c"># 2. Configurar .env</span>
+VITE_BAGS_API_KEY=bags_prod_...
+VITE_NETWORK=<span class="v">devnet</span>
+VITE_SOLANA_RPC=https://api.devnet.solana.com
+VITE_BCF_PROGRAM_ID_DEVNET=<span class="n">ELarLMHYVxR2TndqEc6kHUSvwRyZUPHJ5BHFcD7yQtcJ</span>
+
+<span class="c"># 3a. Deploy completo + watcher + frontend (primera vez)</span>
+bash scripts/deploy.sh
+<span class="c"># → compila el contrato, despliega, lanza watcher + frontend</span>
+
+<span class="c"># 3b. Solo desarrollo (después del primer deploy)</span>
+npm run dev:full
+<span class="c"># → lanza frontend (port 5173) + watcher HTTP (port 3001)</span>
+<span class="c"># ⚠️  El watcher DEBE estar corriendo para pagos CEX automáticos</span>
+<span class="c">#     El proxy de Vite reenvía /watcher/* → localhost:3001 sin problemas de red</span>
+</div>
+
+<h3 style="margin-top:20px">Watcher solo (alternativa a dev:full)</h3>
+<div class="codeblock">
+<span class="c"># DevNet</span>
+node scripts/watcher.mjs
+
+<span class="c"># Mainnet</span>
+VITE_SOLANA_RPC=https://api.mainnet-beta.solana.com \
+BCF_PROGRAM_ID=<span class="n">&lt;mainnet_id&gt;</span> \
+node scripts/watcher.mjs
+
+<span class="c"># El watcher expone:</span>
+<span class="c">#   GET  http://localhost:3001/health   — estado del servicio</span>
+<span class="c">#   POST http://localhost:3001/watch-vault — registro de vault CEX</span>
+</div>
+
+<h3 style="margin-top:20px">Mainnet (producción — SOL real)</h3>
+<div class="codeblock">
+<span class="c"># 1. Desplegar contrato (~2.3 SOL)</span>
+bash scripts/deploy-mainnet.sh
+
+<span class="c"># 2. Actualizar .env con el Program ID impreso</span>
+VITE_NETWORK=<span class="v">mainnet</span>
+VITE_SOLANA_RPC=https://api.mainnet-beta.solana.com
+VITE_BCF_PROGRAM_ID_MAINNET=<span class="n">&lt;id_impreso&gt;</span>
+
+<span class="c"># 3. Build y desplegar</span>
+npm run build  <span class="c"># → dist/ para Vercel / Netlify</span>
+</div>
+
+<div class="box purple" style="margin-top:18px">
+  <strong>Repositorio:</strong> <a href="https://github.com/Mravenec/BagsCreatorFund-BCF-" target="_blank">github.com/Mravenec/BagsCreatorFund-BCF-</a><br>
+  <strong>Program ID activo (DevNet):</strong> <code>ELarLMHYVxR2TndqEc6kHUSvwRyZUPHJ5BHFcD7yQtcJ</code>
+</div>
+</div>
+
+<footer>
+  <span><strong>BagsCreatorFund (BCF)</strong> · Bags Hackathon 2025 · Solana + Anchor + Bags SDK</span>
+  <span>Repositorio: <strong>github.com/Mravenec/BagsCreatorFund-BCF-</strong></span>
+</footer>
+
+</div>
+</body>
+</html>

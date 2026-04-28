@@ -1,12 +1,14 @@
 {
   "name": "bagscreator-fund",
   "version": "1.0.0",
-  "description": "BagsCreatorFund — On-chain creator funding rounds powered by Bags x Solana",
+  "description": "BagsCreatorFund \u2014 On-chain creator funding rounds powered by Bags x Solana",
   "private": true,
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "watcher": "node scripts/watcher.mjs",
+    "dev:full": "npx concurrently \"npm run dev\" \"npm run watcher\""
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.29.0",

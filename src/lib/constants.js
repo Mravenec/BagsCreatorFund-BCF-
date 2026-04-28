@@ -81,3 +81,15 @@ export const DURATIONS = [
 ];
 
 export const TOTAL_POSITIONS = 100;
+
+// ─── Watcher HTTP service ──────────────────────────────────────────────────────
+// In dev: uses Vite proxy → /watcher/* → localhost:3001 (works on WSL2, Docker, etc.)
+// In prod: set VITE_WATCHER_URL to your deployed watcher URL (e.g. https://watcher.myapp.com)
+export const WATCHER_URL = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_WATCHER_URL)
+  ? import.meta.env.VITE_WATCHER_URL
+  : '/watcher';
+
+// ─── CEX payment fee buffer ────────────────────────────────────────────────────
+// Exchanges charge 0.001–0.02 SOL withdrawal fee. We recommend sending
+// position_price + CEX_FEE_BUFFER_SOL to guarantee the vault receives full price.
+export const CEX_FEE_BUFFER_SOL = 0.01; // 0.01 SOL buffer for exchange fees

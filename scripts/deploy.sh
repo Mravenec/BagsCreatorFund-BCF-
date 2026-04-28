@@ -98,7 +98,7 @@ if python3 -c "import sys; sys.exit(0 if float('${BALANCE_SOL:-0}') >= 3.0 else 
 else
   echo -e "${YELLOW}Balance low — requesting DevNet airdrops...${NC}"
   for i in 1 2 3; do
-    solana airdrop 2 2>/dev/null && echo "  +2 SOL" && sleep 8 || true
+    solana airdrop 5 2>/dev/null && echo "  +5 SOL" && sleep 8 || true
     BALANCE_SOL=$(solana balance 2>/dev/null | awk '{print $1}')
     python3 -c "import sys; sys.exit(0 if float('${BALANCE_SOL:-0}') >= 3.0 else 1)" 2>/dev/null && break
   done
@@ -337,21 +337,63 @@ echo ""
 echo -e "${YELLOW}🚀 Launching Services...${NC}"
 
 # Find node
-NODE_BIN=$(command -v node || which node || echo "node")
+# Encuentra node usando npm (npm siempre sabe donde está node, incluso con nvm)
+NODE_BIN=$(npm exec -- node --print 'process.execPath' 2>/dev/null ||            command -v node 2>/dev/null ||            command -v nodejs 2>/dev/null ||            ls "$HOME"/.nvm/versions/node/*/bin/node 2>/dev/null | sort -V | tail -1 ||            echo "node")
 
 # Set environment variables
 export VITE_SOLANA_RPC="$RPC_URL"
 export BCF_PROGRAM_ID="$PROGRAM_ID"
 
+# SOLUCION DEFINITIVA WSL2:
+# 1. Bash escribe el keypair en /tmp (filesystem Linux, accesible via wsl.exe)
+# 2. El watcher lo lee con `wsl.exe cat /tmp/bcf_watcher_kp.json`
+# Esto evita TODOS los problemas de path y env-var entre WSL2 y Windows Node.
+SOLANA_KEYPAIR_PATH=$(solana config get | grep "Keypair Path" | awk '{print $3}')
+SOLANA_KEYPAIR_PATH="${SOLANA_KEYPAIR_PATH:-$HOME/.config/solana/id.json}"
+if [ -f "$SOLANA_KEYPAIR_PATH" ]; then
+  cp "$SOLANA_KEYPAIR_PATH" /tmp/bcf_watcher_kp.json
+  SWEEPER_PUBKEY=$(solana-keygen pubkey "$SOLANA_KEYPAIR_PATH" 2>/dev/null || echo "?")
+  echo -e "  Sweeper  : $SWEEPER_PUBKEY"
+  echo -e "  Keypair  : /tmp/bcf_watcher_kp.json (accesible via wsl.exe)"
+else
+  echo -e "  ${RED}x Keypair no encontrado: $SOLANA_KEYPAIR_PATH${NC}"
+fi
+
+# Volver al directorio del proyecto antes de arrancar el watcher
+# (el build puede haber cambiado el CWD a /tmp/bcf-anchor-build)
+cd "$PROJECT_ROOT"
+
 # Start Watcher in background
-echo -e "  Starting Watcher with $NODE_BIN..."
-$NODE_BIN scripts/watcher.mjs > watcher.log 2>&1 &
+echo -e "  Starting Watcher..."
+npm run watcher > watcher.log 2>&1 &
 WATCHER_PID=$!
 
 # Cleanup on exit
 trap "kill $WATCHER_PID 2>/dev/null || true; exit" SIGINT SIGTERM EXIT
 
-echo -e "${GREEN}✓ Watcher is running (PID: $WATCHER_PID)${NC}"
+# Wait for watcher HTTP port to open (max 15 s)
+WATCHER_READY=false
+for i in $(seq 1 15); do
+  if kill -0 "$WATCHER_PID" 2>/dev/null; then
+    # Process alive — check if port is open
+    if curl -sf "http://127.0.0.1:${WATCHER_PORT:-3001}/health" -o /dev/null 2>/dev/null; then
+      WATCHER_READY=true
+      break
+    fi
+  else
+    echo -e "${RED}✗ Watcher process exited early. Check watcher.log:${NC}"
+    tail -20 watcher.log 2>/dev/null || true
+    break
+  fi
+  sleep 1
+done
+
+if [ "$WATCHER_READY" = "true" ]; then
+  echo -e "${GREEN}✓ Watcher is running (PID: $WATCHER_PID) on port ${WATCHER_PORT:-3001}${NC}"
+else
+  echo -e "${YELLOW}⚠  Watcher not ready yet — it may still be initializing Anchor (check watcher.log)${NC}"
+  echo -e "   The frontend will start. Retry 'Take My Position' once watcher is ready."
+fi
 echo -e "  Logs: tail -f watcher.log"
 echo ""
 
