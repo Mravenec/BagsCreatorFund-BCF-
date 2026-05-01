@@ -294,10 +294,10 @@ function ParticipateModal({ campaign, positionIndex, connection, onClose, onSucc
   async function handleAirdrop() {
     try {
       toast("Requesting airdrop...", "info");
-      await requestAirdrop(publicKey.toBase58(), 2);
+      await requestAirdrop(publicKey.toBase58(), 5);
       const b = await getSOLBalance(publicKey.toBase58());
       setBalance(b);
-      toast("✓ +2 SOL received!", "success");
+      toast("✓ +5 SOL received!", "success");
     } catch { toast("Airdrop failed — try again in 30s", "error"); }
   }
 

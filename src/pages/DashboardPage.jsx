@@ -132,10 +132,10 @@ export default function DashboardPage() {
   async function handleAirdrop() {
     setDropping(true);
     try {
-      toast("Requesting 2 SOL airdrop...", "info");
-      await requestAirdrop(wallet.publicKey.toBase58(), 2);
+      toast("Requesting 5 SOL airdrop...", "info");
+      await requestAirdrop(wallet.publicKey.toBase58(), 5);
       await refresh();
-      toast("✓ +2 SOL received!", "success");
+      toast("✓ +5 SOL received!", "success");
     } catch { toast("Airdrop failed. Try in 30s", "error"); }
     finally { setDropping(false); }
   }
@@ -343,7 +343,7 @@ export default function DashboardPage() {
             {!IS_MAINNET && (
               <button onClick={handleAirdrop} disabled={dropping}
                 style={{ background: "none", border: "none", color: "var(--accent)", fontSize: ".78rem", cursor: "pointer", textDecoration: "underline" }}>
-                {dropping ? "..." : "☁️ +2 SOL Airdrop"}
+                {dropping ? "..." : "☁️ +5 SOL Airdrop"}
               </button>
             )}
           </div>
