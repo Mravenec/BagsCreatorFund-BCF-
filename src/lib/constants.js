@@ -3,8 +3,28 @@ export const NETWORK     = import.meta.env.VITE_NETWORK    || 'devnet';
 export const IS_MAINNET  = NETWORK === 'mainnet';
 export const IS_DEVNET   = !IS_MAINNET;
 
-// ─── SOL price reference (live fetch in bags.js; this is the fallback) ────────
-export const SOL_PRICE_USDC = 145;
+export let SOL_PRICE_USDC = 145;
+
+// Fetch live SOL price from Binance API to keep SOL_PRICE_USDC real-time
+async function fetchRealTimeSolPrice() {
+  try {
+    const response = await fetch('https://api.binance.com/api/v3/ticker/price?symbol=SOLUSDT');
+    const data = await response.json();
+    if (data && data.price) {
+      const price = parseFloat(data.price);
+      if (!isNaN(price) && price > 0) {
+        SOL_PRICE_USDC = price;
+      }
+    }
+  } catch (error) {
+    console.warn('Failed to fetch real-time SOL price:', error);
+  }
+}
+
+// Initial fetch and interval (every 60 seconds)
+fetchRealTimeSolPrice();
+setInterval(fetchRealTimeSolPrice, 60000);
+
 export const toUSDC   = (sol)  => (Number(sol) * SOL_PRICE_USDC).toFixed(2);
 export const fromUSDC = (usdc) => (Number(usdc) / SOL_PRICE_USDC).toFixed(4);
 
