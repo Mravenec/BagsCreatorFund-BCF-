@@ -497,11 +497,12 @@ footer strong{color:var(--text2);font-weight:500}
 <p>El watcher corre como proceso Node.js separado (<code>node scripts/watcher.mjs</code>) con su propio keypair Solana. <strong>El servidor HTTP arranca primero</strong> (antes de que Anchor inicialice) — el puerto 3001 siempre está disponible incluso durante la carga inicial.</p>
 
 <div class="box blue" style="margin-bottom:16px">
-  <strong>3 endpoints HTTP:</strong><br/>
+  <strong>4 endpoints HTTP:</strong><br/>
   <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">
     <div><code>GET &nbsp;/health</code> — estado del servicio; responde siempre, incluso durante init. Muestra si Anchor está listo.</div>
     <div><code>POST /watch-vault</code> — pre-crea el vault on-chain en cuanto el usuario ingresa su dirección Solana. Así el vault existe <em>antes</em> de que llegue el SOL.</div>
     <div><code>POST /sweep-now</code> — asigna la posición CEX. El frontend lo llama automáticamente al detectar el pago, y el botón "🎯 Take My Position" sirve de fallback manual.</div>
+    <div><code>POST /refund-vault</code> — reembolsa un vault cuya posición ya fue tomada por otra persona. El frontend lo llama inmediatamente al detectar el conflicto; el poll loop también lo llama de forma proactiva.</div>
   </div>
 </div>
 
@@ -510,7 +511,12 @@ footer strong{color:var(--text2);font-weight:500}
 <tbody>
 <tr>
   <td>① Sweep</td>
-  <td>Escanea todos los <code>PositionVault</code> on-chain con balance ≥ precio → <code>sweepPositionVault</code> → posición asignada, vault cerrado.</td>
+  <td>Escanea todos los <code>PositionVault</code> on-chain con balance ≥ precio → <code>sweepPositionVault</code> → posición asignada, vault cerrado. Si la TX falla con <code>PositionTaken</code>, activa auto-reembolso de emergencia.</td>
+  <td>Cada 15s</td>
+</tr>
+<tr>
+  <td>① b. Reembolso</td>
+  <td><strong>Anti race-condition:</strong> Escanea todos los vaults activos. Si la posición del vault ya fue asignada a <em>otra dirección</em> (por un usuario wallet o un sweep anterior), llama <code>refundPositionVault</code> → todo el SOL regresa al <code>recipient</code> automáticamente.</td>
   <td>Cada 15s</td>
 </tr>
 <tr>
@@ -520,6 +526,15 @@ footer strong{color:var(--text2);font-weight:500}
 </tr>
 </tbody>
 </table>
+
+<div class="box red" style="margin-bottom:10px">
+  <strong>🛡️ Protección contra conflictos de posición (race condition):</strong><br/>
+  <p style="font-size:.83rem;margin-top:8px;line-height:1.6">
+    Si dos personas intentan comprar la misma posición al mismo tiempo:<br/>
+    • <strong>Usuarios con wallet:</strong> el contrato Anchor rechaza la segunda transacción con <code>PositionTaken</code> <em>antes</em> de transferir SOL — el dinero nunca sale.<br/>
+    • <strong>Usuarios CEX/vault:</strong> cada uno tiene un vault PDA único. El segundo sweep falla con <code>PositionTaken</code>. El watcher detecta esto y llama <code>refundPositionVault</code> automáticamente — el SOL regresa al recipient (menos el fee de red ~0.000005 SOL). El frontend también solicita el reembolso de forma inmediata y muestra una pantalla informativa.
+  </p>
+</div>
 
 <div class="box green">
   <strong>Fallback automático — <code>recordExternalPayment</code>:</strong> Si el SOL del exchange llegó al vault PDA antes de que el watcher lo inicializara, el watcher usa <code>recordExternalPayment</code>. Asigna la posición directamente sin necesitar el vault. El pago queda registrado en blockchain en cualquier caso.

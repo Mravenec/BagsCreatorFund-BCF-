@@ -308,7 +308,7 @@ function ParticipateModal({ campaign, positionIndex, connection, onClose, onSucc
     const provider = new AnchorProvider(connection, anchorWallet, { commitment: "confirmed" });
     const freshAccount = await fetchCampaign(provider, campaign.pda);
     if (!freshAccount || freshAccount.positions[positionIndex].filled) {
-      toast(`Position #${positionIndex < 10 ? '0' + positionIndex : positionIndex} was just taken`, "error");
+      toast(`⚠️ La posición #${positionIndex < 10 ? '0' + positionIndex : positionIndex} acaba de ser tomada por alguien más. No se realizó ningún cobro. Elige otra posición.`, "error");
       onClose(); return;
     }
 
@@ -328,7 +328,8 @@ function ParticipateModal({ campaign, positionIndex, connection, onClose, onSucc
       toast(`✓ Position secured!`, "success");
     } catch(e) {
       const m = e.message||"";
-      if (/rejected|cancelled|canceled/i.test(m)) toast("Cancelled", "info");
+      if (/rejected|cancelled|canceled/i.test(m)) toast("Cancelado", "info");
+      else if (m.includes('PositionTaken')) toast(`⚠️ La posición #${fmtPos(positionIndex)} acaba de ser tomada por otra persona. Tu transacción fue rechazada y no se realizó ningún cobro. Elige otra posición.`, "error");
       else toast("Failed: " + m.slice(0,100), "error");
     } finally { setSending(false); }
   }
@@ -433,6 +434,7 @@ function VaultCEXTab({ campaign, positionIndex, price, lamports, connection,
   const [isChecking,    setIsChecking]      = useState(false);
   const [lastChecked,   setLastChecked]     = useState(null);
   const [autoStatus,    setAutoStatus]      = useState('');   // describes what auto-action is happening
+  const [refundPending, setRefundPending]   = useState(false); // true when position taken by another & refund initiated
 
   // Refs: prevent stale-closure bugs in setInterval/async callbacks
   const sweepingRef  = useRef(false); // true while sweep TX is in-flight
@@ -555,7 +557,16 @@ function VaultCEXTab({ campaign, positionIndex, price, lamports, connection,
       setAutoStatus('');
       const m = e.message || '';
       if (m.includes('PositionTaken')) {
-        toast('Position was taken by someone else while processing', 'error');
+        setRefundPending(true);
+        toast('⚠️ Esta posición fue tomada por alguien más. Tu pago será reembolsado automáticamente (menos el fee de red) en los próximos minutos.', 'error');
+        // Solicitar reembolso al watcher de inmediato
+        const recipient = recipientRef.current || recipientAddr;
+        fetch(`${WATCHER_URL}/refund-vault`, {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ campaign: campaign.pda, positionIndex, recipient }),
+          signal:  AbortSignal.timeout(35000),
+        }).catch(() => {}); // el watcher igual lo detecta en el poll loop
       } else if (m.includes('InsufficientFunds')) {
         toast('Vault balance still below required amount', 'error');
       } else if (!m.includes('rejected')) {
@@ -646,7 +657,18 @@ function VaultCEXTab({ campaign, positionIndex, price, lamports, connection,
         } else if (errMsg.includes('insuficientes') || errMsg.includes('underfunded') || errMsg.includes('Insufficient')) {
           toast('El vault aún no tiene fondos suficientes. Espera un momento y vuelve a intentarlo.', 'error');
         } else if (errMsg.includes('PositionTaken') || errMsg.includes('ya asignada')) {
-          toast('Alguien más tomó esa posición. Elige otra.', 'error');
+          setRefundPending(true);
+          toast('⚠️ Esa posición fue tomada por alguien más mientras procesabas el pago. Tu dinero será reembolsado automáticamente (menos el fee de red). Lo sentimos mucho.', 'error');
+          // Intentar reembolso explícito vía watcher
+          const refundRecipient = recipientRef.current || recipientAddr;
+          fetch(`${WATCHER_URL}/refund-vault`, {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({ campaign: campaign.pda, positionIndex, recipient: refundRecipient }),
+            signal:  AbortSignal.timeout(35000),
+          }).then(r => r.json().catch(() => ({}))).then(j => {
+            if (j.ok && j.tx) console.log(`[BCF-CEX] Reembolso confirmado: ${j.tx.slice(0,16)}…`);
+          }).catch(() => {});
         } else {
           toast('Error del watcher: ' + (errMsg || `HTTP ${resp.status}`).slice(0, 100), 'error');
         }
@@ -689,6 +711,29 @@ function VaultCEXTab({ campaign, positionIndex, price, lamports, connection,
         onSuccess(campaignAccountToDisplay(campaign.pda, account));
         toast(`✅ Position #${String(positionIndex).padStart(2,'0')} secured!`, 'success');
         setTimeout(onClose, 2000);
+        return;
+      }
+
+      // 3b. Position taken by SOMEONE ELSE while we had funds in vault → trigger refund
+      if (currentOwner && currentOwner !== '11111111111111111111111111111111' &&
+          currentOwner !== recipientAddr && bal > 0) {
+        console.warn('[BCF-CEX] Position taken by another address — requesting auto-refund');
+        setRefundPending(true);
+        setPolling(false); // stop polling
+        toast('⚠️ Esta posición fue tomada por otra persona. Tu pago será reembolsado automáticamente.', 'error');
+        // Trigger watcher refund
+        const refundRecipient = recipientRef.current || recipientAddr;
+        fetch(`${WATCHER_URL}/refund-vault`, {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ campaign: campaign.pda, positionIndex, recipient: refundRecipient }),
+          signal:  AbortSignal.timeout(35000),
+        }).then(r => r.json().catch(() => ({}))).then(j => {
+          if (j.ok && j.tx) {
+            console.log(`[BCF-CEX] Reembolso confirmado: ${j.tx.slice(0,16)}…`);
+            toast('✅ Reembolso confirmado on-chain. El SOL regresará a tu dirección en breve.', 'success');
+          }
+        }).catch(() => {});
         return;
       }
 
@@ -785,11 +830,45 @@ function VaultCEXTab({ campaign, positionIndex, price, lamports, connection,
     } catch(e) {
       const m = e.message || '';
       if (m.includes('InsufficientFunds')) toast('Vault balance still too low — wait for funds', 'error');
-      else if (m.includes('PositionTaken')) toast('Position was taken by someone else', 'error');
+      else if (m.includes('PositionTaken')) {
+        setRefundPending(true);
+        toast('⚠️ Posición tomada por alguien más. Tu pago será reembolsado automáticamente. Lo sentimos.', 'error');
+        const refundRecipient = recipientRef.current || recipientAddr;
+        fetch(`${WATCHER_URL}/refund-vault`, {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ campaign: campaign.pda, positionIndex, recipient: refundRecipient }),
+          signal:  AbortSignal.timeout(35000),
+        }).catch(() => {});
+      }
       else                                  toast('Sweep failed: ' + m.slice(0,80), 'error');
     } finally { sweepingRef.current = false; setSweeping(false); }
   }
 
+
+  if (refundPending) {
+    return (
+      <div style={{ display:'flex', flexDirection:'column', gap:'14px' }}>
+        <div style={{ padding:'24px 20px', background:'rgba(251,113,133,.07)', border:'1px solid rgba(251,113,133,.3)', borderRadius:'var(--r)', textAlign:'center' }}>
+          <div style={{ fontSize:'3rem', marginBottom:'12px' }}>💸</div>
+          <h3 style={{ color:'var(--danger, #f87171)', marginBottom:'8px', fontWeight:700 }}>Position already taken</h3>
+          <p style={{ fontSize:'.85rem', color:'var(--text2)', lineHeight:1.6 }}>
+            Someone else bought this position while processing your payment.<br/>
+            <strong style={{ color:'var(--text)' }}>Your money is being automatically refunded.</strong>
+          </p>
+        </div>
+        <div style={{ padding:'14px 16px', background:'rgba(251,191,36,.06)', border:'1px solid rgba(251,191,36,.22)', borderRadius:'var(--r)', fontSize:'.82rem', lineHeight:1.6, color:'var(--text2)' }}>
+          <div style={{ fontWeight:700, color:'var(--amber)', marginBottom:'6px' }}>ℹ️ What will happen?</div>
+          The system watcher will detect your vault with funds and execute an on-chain refund.<br/>
+          The SOL will return to <span style={{ fontFamily:'var(--mono)', color:'var(--text)', wordBreak:'break-all' }}>{recipientAddr.slice(0,8)}…{recipientAddr.slice(-6)}</span> within the next ~15 seconds.<br/>
+          <span style={{ fontSize:'.75rem', color:'var(--text3)', marginTop:'4px', display:'block' }}>Note: Network fee (~0.000005 SOL) is not refundable.</span>
+        </div>
+        <button className="btn btn-ghost btn-full" onClick={onClose} style={{ marginTop:'4px' }}>
+          Close and choose another position
+        </button>
+      </div>
+    );
+  }
 
   if (swept) {
     return (

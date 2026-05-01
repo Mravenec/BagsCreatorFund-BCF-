@@ -58,6 +58,8 @@ const stats = {
   rentReclaimedLamp: 0, // rent devuelto al sweeper por vaults cerrados (~2039280 lamports/vault)
   tipsReclaimedLamp: 0, // exceso sobre positionPrice recibido (buffer de CEX)
   prizesDelivered: 0,
+  refundsOk:     0,   // reembolsos automáticos exitosos (posición ya tomada)
+  refundsFailed: 0,   // reembolsos fallidos
   startedAt: Date.now(),
 };
 const VAULT_RENT_LAMPORTS = 2_039_280; // rent exacto de un PositionVault en Solana devnet
@@ -84,6 +86,8 @@ const server = http.createServer(async (req, res) => {
         tipsReclaimedSOL:   (stats.tipsReclaimedLamp / 1e9).toFixed(6),
         netSOL:             ((stats.rentReclaimedLamp + stats.tipsReclaimedLamp - stats.feesSpentLamp) / 1e9).toFixed(6),
         prizesDelivered:    stats.prizesDelivered,
+        refundsOk:          stats.refundsOk,
+        refundsFailed:      stats.refundsFailed,
         uptimeHours:        ((Date.now() - stats.startedAt) / 3600000).toFixed(2),
       },
     });
@@ -131,6 +135,23 @@ const server = http.createServer(async (req, res) => {
       console.error(`[/sweep-now] ❌ ${msg}`);
       const status = (msg.includes('nder') || msg.includes('lamports')) ? 402 : 500;
       return jsonErr(res, status, msg);
+    }
+  }
+
+  // POST /refund-vault — reembolsa un vault cuya posición ya fue tomada
+  if (req.method === 'POST' && req.url === '/refund-vault') {
+    let body; try { body = JSON.parse(await readBody(req)); } catch { return jsonErr(res, 400, 'JSON inválido'); }
+    const { campaign, positionIndex, recipient } = body || {};
+    if (!campaign || positionIndex == null || !recipient) return jsonErr(res, 400, 'Faltan campaign/positionIndex/recipient');
+    console.log(`\n[/refund-vault] pos#${positionIndex} campaign ${campaign.slice(0,8)}… recipient ${recipient.slice(0,8)}…`);
+    try {
+      const tx = await doRefund(campaign, positionIndex, recipient);
+      if (!tx) return jsonOk(res, { ok: true, tx: null, info: 'Vault vacío o inexistente — nada que reembolsar' });
+      return jsonOk(res, { ok: true, tx });
+    } catch (e) {
+      const msg = (e.message || String(e)).slice(0, 200);
+      console.error(`[/refund-vault] ❌ ${msg}`);
+      return jsonErr(res, 500, msg);
     }
   }
 
@@ -298,6 +319,53 @@ function deriveProjectPDA(creator, projectIndex) {
   );
 }
 
+// ─── doRefund: devuelve el SOL del vault al recipient cuando la posición ya fue tomada ──
+async function doRefund(campaignPDA, positionIndex, recipient) {
+  const PublicKey     = global.__BCF_PublicKey;
+  const SystemProgram = global.__BCF_SystemProgram;
+  const conn          = program.provider.connection;
+
+  const campPub = new PublicKey(campaignPDA);
+  const recPub  = new PublicKey(recipient);
+  const [vaultPub] = deriveVaultPDA(campPub, positionIndex, recPub);
+
+  // Verificar que el vault existe y es del programa
+  const accInfo = await conn.getAccountInfo(vaultPub);
+  if (!accInfo || accInfo.owner.toBase58() !== PROGRAM_STR) {
+    console.log(`[doRefund] Vault pos#${positionIndex} no existe o no pertenece al programa — nada que reembolsar`);
+    return null;
+  }
+
+  const bal = await conn.getBalance(vaultPub);
+  if (bal === 0) {
+    console.log(`[doRefund] Vault pos#${positionIndex} vacío — nada que reembolsar`);
+    return null;
+  }
+
+  // Balance guard del sweeper
+  const swBal = await conn.getBalance(sweeperKey.publicKey);
+  if (swBal < 0.005 * 1e9) {
+    stats.refundsFailed++;
+    throw new Error(`Sweeper sin fondos para reembolsar: ${(swBal/1e9).toFixed(6)} SOL`);
+  }
+
+  console.log(`[doRefund] Reembolsando ${(bal/1e9).toFixed(6)} SOL → pos#${positionIndex} → ${recipient.slice(0,8)}…`);
+
+  const tx = await program.methods.refundPositionVault(positionIndex)
+    .accounts({
+      campaign:      campPub,
+      positionVault: vaultPub,
+      recipient:     recPub,
+      initiator:     sweeperKey.publicKey,
+    })
+    .rpc({ commitment: 'confirmed' });
+
+  stats.refundsOk++;
+  stats.feesSpentLamp += TX_FEE_LAMPORTS;
+  console.log(`[doRefund] ✅ Reembolso exitoso pos#${positionIndex} (${(bal/1e9).toFixed(6)} SOL) → ${recipient.slice(0,8)}… tx ${tx.slice(0,16)}…`);
+  return tx;
+}
+
 // ─── doSweep: crea vault si hace falta, verifica balance, sweep ───────────────
 async function doSweep(campaignPDA, positionIndex, recipient) {
   const PublicKey     = global.__BCF_PublicKey;
@@ -321,13 +389,36 @@ async function doSweep(campaignPDA, positionIndex, recipient) {
     const campAcc = await program.account.campaignAccount.fetch(campPub);
     const pos = campAcc.positions?.[positionIndex];
     if (pos && pos.filled === 1) {
-      throw new Error(`Posición #${positionIndex} ya asignada a ${pos.owner?.toBase58?.()}`);
+      const takenBy = pos.owner?.toBase58?.() || 'desconocido';
+      const isOwnPosition = takenBy === recipient;
+      if (isOwnPosition) {
+        // La misma persona ya tiene la posición (reintento o doble llamada) — no error, no reembolso
+        console.log(`[doSweep] Pos#${positionIndex} ya asignada al mismo recipient ${recipient.slice(0,8)}… — ignorando`);
+        throw new Error(`ALREADY_OWNED:Posición #${positionIndex} ya asignada a esta misma dirección`);
+      }
+      // Posición tomada por OTRA persona — auto-reembolsar el vault de este usuario
+      console.log(`[doSweep] Pos#${positionIndex} ya tomada por ${takenBy.slice(0,8)}… — iniciando reembolso automático para ${recipient.slice(0,8)}…`);
+      try {
+        const refundTx = await doRefund(campaignPDA, positionIndex, recipient);
+        if (refundTx) {
+          throw new Error(`REFUNDED:${positionIndex}:${recipient}:${refundTx}`);
+        } else {
+          throw new Error(`Posición #${positionIndex} ya asignada a ${takenBy.slice(0,8)}… (vault vacío o inexistente)`);
+        }
+      } catch (re) {
+        if (re.message.startsWith('REFUNDED:') || re.message.startsWith('ALREADY_OWNED:')) throw re;
+        stats.refundsFailed++;
+        console.error(`[doSweep] Reembolso automático falló: ${re.message.slice(0,80)}`);
+        throw new Error(`Posición #${positionIndex} ya tomada — reembolso falló: ${re.message.slice(0,60)}`);
+      }
     }
     if (campAcc.status !== 1) { // 1 = Active
       throw new Error(`Campaña no activa (status=${campAcc.status})`);
     }
   } catch (preE) {
-    if (preE.message.includes('ya asignada') || preE.message.includes('no activa')) throw preE;
+    if (preE.message.startsWith('REFUNDED:') || preE.message.startsWith('ALREADY_OWNED:') ||
+        preE.message.includes('ya asignada') || preE.message.includes('no activa') ||
+        preE.message.includes('ya tomada')) throw preE;
     // Si falla el fetch, continuar (podría ser un RPC hiccup)
     console.warn('[doSweep] Pre-validación falló (continuando):', preE.message.slice(0,60));
   }
@@ -408,7 +499,59 @@ async function poll() {
           const tx = await doSweep(va.campaign.toBase58(), va.positionIndex, va.recipient.toBase58());
           process.stdout.write(`  ✅ pos#${va.positionIndex} → ${tx.slice(0,16)}…\n`);
         } catch (se) {
-          process.stdout.write(`  ⚠️  pos#${va.positionIndex} sweep error: ${(se.message||'').slice(0,70)}\n`);
+          const sm = se.message || '';
+          if (sm.startsWith('REFUNDED:')) {
+            // El reembolso ya fue manejado dentro de doSweep
+            const parts = sm.split(':');
+            process.stdout.write(`  💸 pos#${va.positionIndex} posición tomada — vault reembolsado automáticamente (tx ${(parts[3]||'').slice(0,12)}…)\n`);
+          } else if (sm.startsWith('ALREADY_OWNED:')) {
+            process.stdout.write(`  ✅ pos#${va.positionIndex} ya asignado al mismo recipient — OK\n`);
+          } else if (sm.includes('PositionTaken') || sm.includes('ya asignada') || sm.includes('ya tomada')) {
+            // El on-chain rechazó el sweep DESPUÉS de la pre-validación (race muy estrecho)
+            // Intentar reembolso de emergencia
+            process.stdout.write(`  ⚠️  pos#${va.positionIndex} PositionTaken en TX — reembolso de emergencia…\n`);
+            try {
+              const refTx = await doRefund(va.campaign.toBase58(), va.positionIndex, va.recipient.toBase58());
+              if (refTx) {
+                process.stdout.write(`  💸 Reembolso emergencia pos#${va.positionIndex} OK → ${refTx.slice(0,14)}…\n`);
+              } else {
+                process.stdout.write(`  ℹ️  pos#${va.positionIndex} vault vacío/inexistente — nada que reembolsar\n`);
+              }
+            } catch (re) {
+              stats.refundsFailed++;
+              process.stdout.write(`  ❌ Reembolso emergencia pos#${va.positionIndex} falló: ${(re.message||'').slice(0,60)}\n`);
+            }
+          } else {
+            stats.sweepsFailed++;
+            process.stdout.write(`  ⚠️  pos#${va.positionIndex} sweep error: ${sm.slice(0,70)}\n`);
+          }
+        }
+      }
+
+      // Fase 1b: Reembolsar vaults cuya posición ya fue tomada por OTRA persona
+      // (cubre el caso en que un usuario wallet tomó la posición y hay un vault huérfano)
+      process.stdout.write(`  🔍 Verificando vaults huérfanos (posición tomada por otro)…\n`);
+      for (const { publicKey: vk, account: va } of vaults) {
+        try {
+          const campAcc = await program.account.campaignAccount.fetch(va.campaign);
+          const pos = campAcc.positions?.[va.positionIndex];
+          if (!pos || pos.filled !== 1) continue; // posición libre o no asignada
+          const posOwner = pos.owner?.toBase58?.();
+          const vaultRecipient = va.recipient.toBase58();
+          if (posOwner === vaultRecipient) continue; // posición asignada a este mismo vault — OK
+          // Posición tomada por otra persona y el vault sigue existiendo con fondos
+          const bal = await program.provider.connection.getBalance(vk);
+          if (bal === 0) continue;
+          process.stdout.write(`  💸 Vault huérfano pos#${va.positionIndex} (tomada por ${posOwner?.slice(0,8)}…) — reembolsando ${vaultRecipient.slice(0,8)}…\n`);
+          try {
+            const refTx = await doRefund(va.campaign.toBase58(), va.positionIndex, vaultRecipient);
+            if (refTx) process.stdout.write(`  ✅ Reembolso huérfano pos#${va.positionIndex} → ${refTx.slice(0,14)}…\n`);
+          } catch (re) {
+            stats.refundsFailed++;
+            process.stdout.write(`  ❌ Reembolso huérfano pos#${va.positionIndex} falló: ${(re.message||'').slice(0,60)}\n`);
+          }
+        } catch (checkE) {
+          process.stdout.write(`  ⚠️  Chequeo vault huérfano pos#${va.positionIndex}: ${(checkE.message||'').slice(0,50)}\n`);
         }
       }
     } else {
