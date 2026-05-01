@@ -1044,7 +1044,9 @@ export default function CampaignPage() {
         const account = await fetchCampaign(provider, id);
         if (!account) { navigate("/explore"); return; }
         
-        const campaignDisplay = campaignAccountToDisplay(id, account);
+        const mintStr = account.tokenMint.toBase58();
+        const localToken = getToken(mintStr);
+        const campaignDisplay = campaignAccountToDisplay(id, account, localToken);
         setCampaign(campaignDisplay);
 
         // 2. Fetch Project Identity (Secondary Data - Non-blocking)
@@ -1061,15 +1063,25 @@ export default function CampaignPage() {
                 balanceSOL: project.treasury?.balanceSOL ?? 0,
               }
             });
+            setCampaign(prev => ({ ...prev, tokenSymbol: project.symbol, tokenName: project.name }));
           }
         } catch (projErr) {
           console.warn("[BCF] Project identity fetch skipped (rate limiting?):", projErr.message || projErr);
-          // Fallback minimal token info from campaign data
-          setToken({
-            mint: account.tokenMint.toBase58(),
-            symbol: "???",
-            name: "Bags Token"
-          });
+          if (localToken) {
+            setToken({
+              mint: localToken.mint,
+              symbol: localToken.symbol,
+              name: localToken.name
+            });
+            setCampaign(prev => ({ ...prev, tokenSymbol: localToken.symbol, tokenName: localToken.name }));
+          } else {
+            // Fallback minimal token info from campaign data
+            setToken({
+              mint: mintStr,
+              symbol: "???",
+              name: "Bags Token"
+            });
+          }
         }
       } catch (e) {
         console.error("[BCF] Critical error loading campaign:", e.message || e);
