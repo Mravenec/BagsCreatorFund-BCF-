@@ -603,6 +603,7 @@ export function campaignAccountToDisplay(pda, account, tokenInfo = null) {
 
   const rawWinning = account.winningPosition;
   const winning = (rawWinning !== undefined && rawWinning !== 255 && rawWinning !== null) ? rawWinning : null;
+  const statusStr = ['pending', 'active', 'settled'][account.status] || 'pending';
 
   return {
     id:                pda,
@@ -621,7 +622,8 @@ export function campaignAccountToDisplay(pda, account, tokenInfo = null) {
     tokensPerPosition: account.tokensPerPosition?.toNumber?.() ?? 0,
     durationHours:     Math.round((account.durationSeconds?.toNumber?.() ?? 0) / 3600),
     deadline,
-    status:            ['pending', 'active', 'settled'][account.status] || 'pending',
+    status:            statusStr,
+    claimed:           statusStr === 'settled' && prizeSOL === 0 && totalCollectedSOL === 0,
     positions,
     totalCollectedSOL,
     treasuryContribution: (account.treasuryContribution?.toNumber?.() ?? 0) / LAMPORTS_PER_SOL,

@@ -177,6 +177,9 @@ export default function DashboardPage() {
       const provider = new AnchorProvider(connection, wallet, { commitment: "confirmed" });
       await claimPrizeOnChain(provider, { campaignPDA: campaign.pda });
       toast("Prize claimed! 🥳", "success");
+      setCampaigns(prev => prev.map(camp => 
+        camp.pda === campaign.pda ? { ...camp, claimed: true } : camp
+      ));
       setTimeout(() => refresh(), 1200);
     } catch (e) {
       toast("Claim error: " + (e.message || ""), "error");
@@ -939,7 +942,17 @@ const CampaignSection = ({ title, campaigns, wallet, projects, handleClaim, hand
                   📋 Details
                 </Link>
 
-                {isWinner && <button onClick={() => handleClaim(c)} className="btn btn-sm btn-primary" style={{ flex: 1, fontSize: ".72rem" }}>⚡ Claim</button>}
+                {isWinner && !c.claimed && (
+                  <button onClick={() => handleClaim(c)} className="btn btn-sm btn-primary" style={{ flex: 1, fontSize: ".72rem" }}>
+                    ⚡ Claim
+                  </button>
+                )}
+
+                {isWinner && c.claimed && (
+                  <button disabled className="btn btn-sm btn-outline" style={{ flex: 1, fontSize: ".72rem", opacity: 0.7 }}>
+                    ✅ Claimed
+                  </button>
+                )}
 
                 {c.status === "active" && expired && (
                   <button onClick={() => handleResolve(c)} className="btn btn-sm btn-primary" style={{ flex: 1.5, fontSize: ".72rem", background: "var(--accent)" }}>
