@@ -25,39 +25,48 @@ export const TREASURY_FEE_PCT = 2; // 2% of each position sale → treasury
 // ─── Token economy ────────────────────────────────────────────────────────────
 export const TOKENS_PER_SOL = 1_000_000; // 1 SOL = 1M project tokens
 
-// ─── Bags fee modes ──────────────────────────────────────────────────────────
+// ─── Bags fee modes (bagsConfigType UUIDs — official from docs.bags.fm) ───────
+// These names match exactly what bags.fm/launch shows in the LAUNCH TYPE dropdown
 export const FEE_MODES = [
   {
     id: 'fa29606e-5e48-4c37-827f-4b03d58ee23d',
-    name: 'Standard (2% flat)',
+    name: 'Founder Mode',
+    uiLabel: 'Earn 1% of total trading volume',
     short: '2% / 2%',
-    desc: 'Flat 2% on all trades. You earn 1%, Bags protocol earns 1%. Simple and predictable.',
-    creatorEarns: '1% per trade',
+    desc: '2% fees on all trades, pre and post migration. You earn 1% of total volume. Simple and predictable.',
+    creatorEarns: '1% of total trading volume',
     recommended: true,
+    compounding: '25% fee compounding post-migration',
   },
   {
     id: 'd16d3585-6488-4a6c-9a6f-e6c39ca0fda3',
-    name: 'Low Early / High After',
+    name: 'Low Early → High After',
+    uiLabel: '0.25% pre-migration → 1% post-migration',
     short: '0.25% → 1%',
-    desc: '0.25% during bonding curve to attract early volume, then 1% after graduation.',
-    creatorEarns: '~0.5% per trade',
+    desc: '0.25% fees during bonding curve to attract early volume, then 1% after graduation. 50% fee compounding post-migration.',
+    creatorEarns: '~0.5% blended per trade',
     recommended: false,
+    compounding: '50% fee compounding post-migration',
   },
   {
     id: 'a7c8e1f2-3d4b-5a6c-9e0f-1b2c3d4e5f6a',
-    name: 'High Early / Low After',
+    name: 'High Early → Low After',
+    uiLabel: '1% pre-migration → 0.25% post-migration',
     short: '1% → 0.25%',
-    desc: '1% while on bonding curve for maximum early revenue, then lower 0.25% post-graduation.',
-    creatorEarns: '~0.5% per trade',
+    desc: '1% fees while on bonding curve for maximum early revenue, then 0.25% post-graduation. 50% compounding post-migration.',
+    creatorEarns: '~0.5% blended per trade',
     recommended: false,
+    compounding: '50% fee compounding post-migration',
   },
   {
     id: '48e26d2f-0a9d-4625-a3cc-c3987d874b9e',
-    name: 'High Flat (10%)',
+    name: 'Paper Hand Tax Mode',
+    uiLabel: '10% tax with 50% added to LP',
     short: '10% / 10%',
-    desc: '10% on all trades. Maximum fee revenue with 50% compounding into pool post-graduation.',
+    desc: '10% fees on all trades pre and post migration. 50% of fees added to liquidity pool. Discourages early selling.',
     creatorEarns: '5% per trade',
     recommended: false,
+    compounding: '50% fee compounding post-migration',
   },
 ];
 
@@ -71,6 +80,24 @@ export const CATEGORIES = [
   { value: 'content',   label: '📹 Content'        },
   { value: 'other',     label: '✨ Other'          },
 ];
+
+// ─── Incorporation categories (matches Bags API enum) ─────────────────────────
+export const INCORPORATION_CATEGORIES = [
+  { value: 'AI',     label: '🤖 AI'            },
+  { value: 'DEFI',   label: '💎 DeFi'          },
+  { value: 'INFRA',  label: '⚙️ Infrastructure' },
+  { value: 'GAMING', label: '🎮 Gaming'         },
+  { value: 'NFT',    label: '🖼 NFT'            },
+  { value: 'MEME',   label: '🐸 Meme'           },
+  { value: 'RWA',    label: '🏢 RWA'            },
+  { value: 'DEPIN',  label: '📡 DePIN'          },
+  { value: 'LEGAL',  label: '⚖️ Legal'          },
+];
+
+// ─── Initial buy presets (mirrors bags.fm UI buttons) ────────────────────────
+// SOL amounts shown as quick-select buttons on the launch form
+export const INITIAL_BUY_PRESETS_SOL = [0, 0.1, 0.5, 1, 2.5];
+
 
 export const DURATIONS = [
   { value: 1,   label: '1 hour (demo)'  },

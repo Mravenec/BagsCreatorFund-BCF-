@@ -414,11 +414,11 @@ export async function executeReinvest(wallet, solLamports, tokenMint) {
   return { signature: sig, quote };
 }
 
-// ─── Claimable fee positions ──────────────────────────────────────────────────
+// ─── Get claimable fee positions ─────────────────────────────────────────────
 export async function getClaimablePositions(walletPublicKey) {
   try {
     const r = await fetch(
-      `${BASE}/token-launch/claimable-positions?wallet=${walletPublicKey}`,
+      `${BASE}/fee-claiming/claimable-positions?wallet=${walletPublicKey}`,
       { headers: authHeader() }
     );
     if (!r.ok) return [];
@@ -427,10 +427,10 @@ export async function getClaimablePositions(walletPublicKey) {
   } catch { return []; }
 }
 
-// ─── Get claim transactions via Bags API ─────────────────────────────────────
-export async function getClaimTransactions(walletPublicKey, tokenMint) {
+// ─── Get claim transactions v3 ────────────────────────────────────────────────
+export async function getClaimTransactionsV3(walletPublicKey, tokenMint) {
   try {
-    const r = await fetch(`${BASE}/token-launch/claim-txs/v3`, {
+    const r = await fetch(`${BASE}/fee-claiming/claim-transactions`, {
       method: 'POST',
       headers: jsonHeader(),
       body: JSON.stringify({
@@ -443,3 +443,194 @@ export async function getClaimTransactions(walletPublicKey, tokenMint) {
     return d?.response || [];
   } catch { return []; }
 }
+
+// ─── Execute claim transactions ───────────────────────────────────────────────
+export async function executeClaimTransactions(wallet, claimTxs) {
+  const results = [];
+  for (const txObj of claimTxs) {
+    try {
+      const txBytes = Buffer.from(txObj.transaction, 'base64');
+      let tx;
+      try { tx = VersionedTransaction.deserialize(txBytes); }
+      catch { tx = Transaction.from(txBytes); }
+
+      if (txObj.blockhash?.blockhash) {
+        if (tx instanceof VersionedTransaction) tx.message.recentBlockhash = txObj.blockhash.blockhash;
+        else tx.recentBlockhash = txObj.blockhash.blockhash;
+      }
+
+      const signed = await wallet.signTransaction(tx);
+      const sig = await mainnetConnection.sendRawTransaction(signed.serialize(), { skipPreflight: false, maxRetries: 5 });
+      await mainnetConnection.confirmTransaction({
+        signature: sig,
+        blockhash: txObj.blockhash?.blockhash,
+        lastValidBlockHeight: txObj.blockhash?.lastValidBlockHeight,
+      }, 'confirmed');
+      results.push({ success: true, signature: sig });
+    } catch (e) {
+      results.push({ success: false, error: e.message });
+    }
+  }
+  return results;
+}
+
+// ─── Fee Share Admin: get admin list ─────────────────────────────────────────
+export async function getFeeShareAdminList(walletPublicKey) {
+  try {
+    const r = await fetch(`${BASE}/fee-share/admin/list?wallet=${walletPublicKey}`, { headers: authHeader() });
+    if (!r.ok) return [];
+    const d = await r.json();
+    return d?.response || [];
+  } catch { return []; }
+}
+
+// ─── Fee Share Admin: update config (change claimers/percentages post-launch) ─
+export async function updateFeeShareConfig(wallet, { baseMint, claimersArray, basisPointsArray }) {
+  const payer = wallet.publicKey.toString();
+  const r = await fetch(`${BASE}/fee-share/admin/update-config`, {
+    method: 'POST',
+    headers: jsonHeader(),
+    body: JSON.stringify({ baseMint, basisPointsArray, claimersArray, payer }),
+  });
+  if (!r.ok) { const msg = await parseError(r); throw new Error(`update-config error ${r.status}: ${msg}`); }
+  const data = await r.json();
+  const txs = data?.response?.transactions || [];
+  // Sign and send each TX
+  for (const txObj of txs) {
+    const txBytes = Buffer.from(txObj.transaction, 'base64');
+    let tx;
+    try { tx = VersionedTransaction.deserialize(txBytes); } catch { tx = Transaction.from(txBytes); }
+    if (txObj.blockhash?.blockhash) {
+      if (tx instanceof VersionedTransaction) tx.message.recentBlockhash = txObj.blockhash.blockhash;
+      else tx.recentBlockhash = txObj.blockhash.blockhash;
+    }
+    const signed = await wallet.signTransaction(tx);
+    const sig = await mainnetConnection.sendRawTransaction(signed.serialize(), { skipPreflight: false, maxRetries: 5 });
+    await mainnetConnection.confirmTransaction({ signature: sig, blockhash: txObj.blockhash?.blockhash, lastValidBlockHeight: txObj.blockhash?.lastValidBlockHeight }, 'confirmed');
+  }
+  return true;
+}
+
+// ─── Fee Share Admin: transfer admin authority to new wallet ─────────────────
+export async function transferFeeShareAdmin(wallet, { baseMint, newAdmin }) {
+  const currentAdmin = wallet.publicKey.toString();
+  const r = await fetch(`${BASE}/fee-share/admin/transfer-tx`, {
+    method: 'POST',
+    headers: jsonHeader(),
+    body: JSON.stringify({ baseMint, currentAdmin, newAdmin, payer: currentAdmin }),
+  });
+  if (!r.ok) { const msg = await parseError(r); throw new Error(`transfer-admin error ${r.status}: ${msg}`); }
+  const data = await r.json();
+  const txObj = data?.response;
+  if (!txObj?.transaction) throw new Error('No transaction returned');
+  const txBytes = Buffer.from(txObj.transaction, 'base64');
+  let tx;
+  try { tx = VersionedTransaction.deserialize(txBytes); } catch { tx = Transaction.from(txBytes); }
+  if (txObj.blockhash?.blockhash) {
+    if (tx instanceof VersionedTransaction) tx.message.recentBlockhash = txObj.blockhash.blockhash;
+    else tx.recentBlockhash = txObj.blockhash.blockhash;
+  }
+  const signed = await wallet.signTransaction(tx);
+  const sig = await mainnetConnection.sendRawTransaction(signed.serialize(), { skipPreflight: false, maxRetries: 5 });
+  await mainnetConnection.confirmTransaction({ signature: sig, blockhash: txObj.blockhash?.blockhash, lastValidBlockHeight: txObj.blockhash?.lastValidBlockHeight }, 'confirmed');
+  return sig;
+}
+
+// ─── Analytics: lifetime fees ────────────────────────────────────────────────
+export async function getLifetimeFees(tokenMint) {
+  try {
+    const r = await fetch(`${BASE}/analytics/lifetime-fees?tokenMint=${tokenMint}`, { headers: authHeader() });
+    if (!r.ok) return null;
+    const d = await r.json();
+    return d?.response ?? null;
+  } catch { return null; }
+}
+
+// ─── Analytics: token creators ───────────────────────────────────────────────
+export async function getTokenCreators(tokenMint) {
+  try {
+    const r = await fetch(`${BASE}/analytics/creators?tokenMint=${tokenMint}`, { headers: authHeader() });
+    if (!r.ok) return [];
+    const d = await r.json();
+    return d?.response || [];
+  } catch { return []; }
+}
+
+// ─── Analytics: claim stats ───────────────────────────────────────────────────
+export async function getClaimStats(tokenMint) {
+  try {
+    const r = await fetch(`${BASE}/analytics/claim-stats?tokenMint=${tokenMint}`, { headers: authHeader() });
+    if (!r.ok) return null;
+    const d = await r.json();
+    return d?.response ?? null;
+  } catch { return null; }
+}
+
+// ─── Dexscreener: check availability ─────────────────────────────────────────
+export async function checkDexscreenerAvailability(tokenMint) {
+  try {
+    const r = await fetch(`${BASE}/dexscreener/order/availability?tokenMint=${tokenMint}`, { headers: authHeader() });
+    if (!r.ok) return { available: false };
+    const d = await r.json();
+    return d?.response || { available: false };
+  } catch { return { available: false }; }
+}
+
+// ─── Dexscreener: create order ────────────────────────────────────────────────
+export async function createDexscreenerOrder(wallet, { tokenMint, orderType }) {
+  const payer = wallet.publicKey.toString();
+  const r = await fetch(`${BASE}/dexscreener/order`, {
+    method: 'POST',
+    headers: jsonHeader(),
+    body: JSON.stringify({ payer, tokenMint, orderType }),
+  });
+  if (!r.ok) { const msg = await parseError(r); throw new Error(`dexscreener order error ${r.status}: ${msg}`); }
+  const d = await r.json();
+  return d?.response;
+}
+
+// ─── Incorporation: create payment ───────────────────────────────────────────
+export async function createIncorporationPayment(wallet, { tokenMint }) {
+  const payer = wallet.publicKey.toString();
+  const r = await fetch(`${BASE}/incorporate/payment`, {
+    method: 'POST',
+    headers: jsonHeader(),
+    body: JSON.stringify({ payer, tokenMint }),
+  });
+  if (!r.ok) { const msg = await parseError(r); throw new Error(`incorporation payment error ${r.status}: ${msg}`); }
+  const d = await r.json();
+  return d?.response;
+}
+
+// ─── Incorporation: submit details ───────────────────────────────────────────
+export async function submitIncorporationDetails({
+  orderUUID, paymentSignature, projectName, tokenAddress,
+  founders, incorporationShareBasisPoint, preferredCompanyNames,
+  category, twitterHandle,
+}) {
+  const r = await fetch(`${BASE}/incorporate`, {
+    method: 'POST',
+    headers: jsonHeader(),
+    body: JSON.stringify({
+      orderUUID, paymentSignature, projectName, tokenAddress,
+      founders, incorporationShareBasisPoint,
+      preferredCompanyNames, category, twitterHandle,
+    }),
+  });
+  if (!r.ok) { const msg = await parseError(r); throw new Error(`incorporation submit error ${r.status}: ${msg}`); }
+  const d = await r.json();
+  return d?.success;
+}
+
+// ─── Incorporation: start process ────────────────────────────────────────────
+export async function startIncorporation({ orderUUID, tokenAddress }) {
+  const r = await fetch(`${BASE}/incorporate/start`, {
+    method: 'POST',
+    headers: jsonHeader(),
+    body: JSON.stringify({ orderUUID, tokenAddress }),
+  });
+  if (!r.ok) { const msg = await parseError(r); throw new Error(`incorporation start error ${r.status}: ${msg}`); }
+  const d = await r.json();
+  return d?.success;
+}
+

@@ -11,7 +11,9 @@ import { AnchorProvider } from "@coral-xyz/anchor";
 import { LAMPORTS_PER_SOL } from "@solana/web3.js";
 import { requestAirdrop, getSOLBalance } from "../lib/solana.js";
 import { bagsTokenUrl, isRealMint, getTokenMarketData, executeReinvest,
-  getClaimablePositions, getClaimTransactions } from "../lib/bags.js";
+  getClaimablePositions, getClaimTransactionsV3, executeClaimTransactions,
+  updateFeeShareConfig, transferFeeShareAdmin, getFeeShareAdminList,
+  getLifetimeFees, checkDexscreenerAvailability } from "../lib/bags.js";
 import { IS_MAINNET, NETWORK, SOL_MINT } from "../lib/constants.js";
 import { useToast } from "../components/Toast.jsx";
 
@@ -36,10 +38,23 @@ export default function DashboardPage() {
   const [rAmount, setRAmount]   = useState("");
   const [rQuote,  setRQuote]    = useState(null);
   const [rLoading, setRLoading] = useState(false);
-  const [rStep,   setRStep]     = useState(1); // 1=withdraw, 2=swap
+  const [rStep,   setRStep]     = useState(1);
+
+  // Fee sharing management modal
+  const [fsModal, setFsModal]   = useState({ show: false, project: null });
+  const [fsClaimers, setFsClaimers] = useState([{ wallet: "", bp: 10000 }]);
+  const [fsLoading, setFsLoading]   = useState(false);
+  const [fsTab, setFsTab]           = useState("update"); // "update" | "transfer"
+  const [fsNewAdmin, setFsNewAdmin] = useState("");
+
+  // Claim Bags fees modal
+  const [claimModal, setClaimModal]   = useState({ show: false, project: null });
+  const [claimTxs, setClaimTxs]       = useState([]);
+  const [claimLoading, setClaimLoading] = useState(false);
 
   // Token market data cache { mint → {price, volume24h, marketCap, holders} }
-  const [marketData, setMarketData] = useState({});
+  const [marketData, setMarketData]   = useState({});
+  const [lifetimeFees, setLifetimeFees] = useState({});
 
   // Claimable fees
   const [claimable, setClaimable]   = useState([]);
@@ -82,15 +97,17 @@ export default function DashboardPage() {
       const b = await getSOLBalance(pubkeyStr);
       setBalance(b || 0);
 
-      // 4. Token market data for each project (best-effort)
-      const mdata = {};
+      // 4. Token market data + lifetime fees for each project (best-effort)
+      const mdata = {}; const lfees = {};
       for (const p of allProjects) {
         if (p.mint && p.mint !== 'D9KdRFUG4mZ3gqgDSF8mdfDpJk7qKHsmDn8g3dRsvfBV') {
-          const md = await getTokenMarketData(p.mint);
-          if (md) mdata[p.mint] = md;
+          const [md, lf] = await Promise.allSettled([getTokenMarketData(p.mint), getLifetimeFees(p.mint)]);
+          if (md.value) mdata[p.mint] = md.value;
+          if (lf.value !== null && lf.value !== undefined) lfees[p.mint] = lf.value;
         }
       }
       setMarketData(mdata);
+      setLifetimeFees(lfees);
 
       // 5. Claimable fee positions
       try {
@@ -203,7 +220,78 @@ export default function DashboardPage() {
     }
   }
 
-  // Filtered campaigns based on selected project tab
+  // ─── Open fee share manager ──────────────────────────────────────────────────
+  async function openFeeShareModal(project) {
+    setFsTab("update");
+    setFsNewAdmin("");
+    setFsLoading(true);
+    setFsModal({ show: true, project });
+    try {
+      const admins = await getFeeShareAdminList(wallet.publicKey.toString());
+      const mine = admins.find(a => a.baseMint === project.mint || a.tokenMint === project.mint);
+      if (mine?.claimers) {
+        setFsClaimers(mine.claimers.map(c => ({ wallet: c.wallet || c.publicKey || "", bp: c.basisPoints || c.bp || 0 })));
+      } else {
+        setFsClaimers([{ wallet: wallet.publicKey.toString(), bp: 10000 }]);
+      }
+    } catch { setFsClaimers([{ wallet: wallet.publicKey.toString(), bp: 10000 }]); }
+    finally { setFsLoading(false); }
+  }
+
+  async function handleUpdateFeeShare() {
+    if (!wallet || !fsModal.project) return;
+    const totalBP = fsClaimers.reduce((s, c) => s + Number(c.bp), 0);
+    if (totalBP !== 10000) { toast(`Total must be 10 000 bp (currently ${totalBP})`, "error"); return; }
+    setFsLoading(true);
+    try {
+      await updateFeeShareConfig(wallet, {
+        baseMint: fsModal.project.mint,
+        claimersArray: fsClaimers.map(c => c.wallet),
+        basisPointsArray: fsClaimers.map(c => Number(c.bp)),
+      });
+      toast("✅ Fee sharing updated!", "success");
+      setFsModal({ show: false, project: null });
+    } catch (e) { toast("Update failed: " + (e.message || ""), "error"); }
+    finally { setFsLoading(false); }
+  }
+
+  async function handleTransferAdmin() {
+    if (!wallet || !fsModal.project || !fsNewAdmin.trim()) { toast("Enter new admin wallet", "error"); return; }
+    setFsLoading(true);
+    try {
+      const sig = await transferFeeShareAdmin(wallet, { baseMint: fsModal.project.mint, newAdmin: fsNewAdmin.trim() });
+      toast("✅ Admin transferred! tx: " + sig.slice(0,8) + "...", "success");
+      setFsModal({ show: false, project: null });
+    } catch (e) { toast("Transfer failed: " + (e.message || ""), "error"); }
+    finally { setFsLoading(false); }
+  }
+
+  // ─── Open claim fees modal ────────────────────────────────────────────────
+  async function openClaimModal(project) {
+    setClaimModal({ show: true, project });
+    setClaimLoading(true);
+    setClaimTxs([]);
+    try {
+      const txs = await getClaimTransactionsV3(wallet.publicKey.toString(), project.mint);
+      setClaimTxs(Array.isArray(txs) ? txs : []);
+    } catch { setClaimTxs([]); }
+    finally { setClaimLoading(false); }
+  }
+
+  async function handleExecuteClaim() {
+    if (!wallet || claimTxs.length === 0) return;
+    setClaimLoading(true);
+    try {
+      const results = await executeClaimTransactions(wallet, claimTxs);
+      const ok = results.filter(r => r.success).length;
+      toast(`✅ ${ok}/${results.length} claim TXs confirmed!`, "success");
+      setClaimModal({ show: false, project: null });
+      setTimeout(() => refresh(), 2000);
+    } catch (e) { toast("Claim error: " + (e.message || ""), "error"); }
+    finally { setClaimLoading(false); }
+  }
+
+
   const visibleCampaigns = activeProjectIndex === null
     ? campaigns
     : campaigns.filter(c => c.projectIndex === activeProjectIndex);
@@ -348,6 +436,18 @@ export default function DashboardPage() {
                     </div>
                   )}
 
+                  {/* Lifetime fees from Bags API */}
+                  {lifetimeFees[p.mint] !== undefined && (
+                    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"7px 12px", background:"rgba(52,211,153,.04)", border:"1px solid rgba(52,211,153,.1)", borderRadius:"8px", marginBottom:"10px" }}>
+                      <span style={{ fontSize:".68rem", color:"var(--text3)", textTransform:"uppercase" }}>Lifetime Bags Fees</span>
+                      <span style={{ fontFamily:"var(--mono)", fontSize:".8rem", fontWeight:700, color:"var(--green)" }}>
+                        {typeof lifetimeFees[p.mint] === "object"
+                          ? `${Number(lifetimeFees[p.mint]?.totalFees || 0).toFixed(4)} SOL`
+                          : `${Number(lifetimeFees[p.mint]).toFixed(4)} SOL`}
+                      </span>
+                    </div>
+                  )}
+
                   {/* Treasury */}
                   <div style={{ padding: "10px 14px", background: "rgba(52,211,153,.04)", borderRadius: "8px", border: "1px solid rgba(52,211,153,.1)", marginBottom: "14px" }}>
                     <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom: p.treasury.balanceSOL > 0 ? "10px" : "0" }}>
@@ -375,7 +475,7 @@ export default function DashboardPage() {
                   </div>
 
                   {/* Actions */}
-                  <div style={{ display: "flex", gap: "8px" }}>
+                  <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
                     <Link to={`/create-campaign?project=${p.projectIndex}`} onClick={e => e.stopPropagation()}
                       className="btn btn-primary" style={{ flex: 1, padding: "8px", textAlign: "center", fontSize: ".78rem" }}>
                       + Campaign
@@ -385,6 +485,19 @@ export default function DashboardPage() {
                       {isSelected ? "▲ Hide" : "▼ Campaigns"}
                     </button>
                   </div>
+                  {/* Fee management row */}
+                  {isReal && (
+                    <div style={{ display: "flex", gap: "6px", marginTop: "8px" }}>
+                      <button onClick={e => { e.stopPropagation(); openFeeShareModal(p); }}
+                        className="btn btn-ghost btn-sm" style={{ flex: 1, fontSize: ".71rem", padding: "6px 8px" }}>
+                        ⚙️ Fee Sharing
+                      </button>
+                      <button onClick={e => { e.stopPropagation(); openClaimModal(p); }}
+                        className="btn btn-ghost btn-sm" style={{ flex: 1, fontSize: ".71rem", padding: "6px 8px", color: "var(--green)" }}>
+                        💰 Claim Fees
+                      </button>
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -521,7 +634,130 @@ export default function DashboardPage() {
         )}
       </section>
 
-      {/* ── REINVEST MODAL ── */}
+      {/* ── FEE SHARING MANAGEMENT MODAL ── */}
+      {fsModal.show && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.88)", backdropFilter:"blur(10px)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:"20px" }}>
+          <div className="card" style={{ maxWidth:"520px", width:"100%", padding:"32px", maxHeight:"90vh", overflowY:"auto" }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"6px" }}>
+              <h2 style={{ fontWeight:800, margin:0 }}>⚙️ Manage Fee Sharing</h2>
+              <button onClick={() => setFsModal({ show:false, project:null })} style={{ background:"none", border:"none", color:"var(--text3)", fontSize:"1.4rem", cursor:"pointer" }}>×</button>
+            </div>
+            <p style={{ color:"var(--text3)", fontSize:".84rem", marginBottom:"18px" }}>
+              Token: <strong style={{ color:"var(--accent)" }}>${fsModal.project?.symbol}</strong> — Changes require a signed Mainnet transaction.
+            </p>
+
+            {/* Tabs */}
+            <div style={{ display:"flex", gap:"8px", marginBottom:"20px" }}>
+              {["update","transfer"].map(t => (
+                <button key={t} onClick={() => setFsTab(t)}
+                  className={`btn btn-sm ${fsTab === t ? "btn-primary" : "btn-ghost"}`}
+                  style={{ fontSize:".76rem" }}>
+                  {t === "update" ? "Update Claimers" : "Transfer Admin"}
+                </button>
+              ))}
+            </div>
+
+            {fsTab === "update" && (
+              <div style={{ display:"flex", flexDirection:"column", gap:"12px" }}>
+                {fsLoading ? <div style={{ textAlign:"center", color:"var(--text3)", padding:"20px" }}>Loading current config…</div> : (
+                  <>
+                    {fsClaimers.map((c, i) => (
+                      <div key={i} style={{ display:"flex", gap:"8px", alignItems:"center" }}>
+                        <input className="input" style={{ flex:3, fontFamily:"var(--mono)", fontSize:".78rem" }}
+                          placeholder="Wallet address" value={c.wallet}
+                          onChange={e => setFsClaimers(cl => cl.map((x, idx) => idx === i ? { ...x, wallet: e.target.value } : x))} />
+                        <input type="number" className="input" style={{ flex:1, fontFamily:"var(--mono)" }}
+                          placeholder="bp" value={c.bp}
+                          onChange={e => setFsClaimers(cl => cl.map((x, idx) => idx === i ? { ...x, bp: e.target.value } : x))} />
+                        <span style={{ fontSize:".72rem", color:"var(--text3)", minWidth:"32px" }}>
+                          {((Number(c.bp)||0)/100).toFixed(0)}%
+                        </span>
+                        {fsClaimers.length > 1 && (
+                          <button onClick={() => setFsClaimers(cl => cl.filter((_,idx)=>idx!==i))}
+                            style={{ background:"none", border:"none", color:"var(--text3)", cursor:"pointer" }}>×</button>
+                        )}
+                      </div>
+                    ))}
+                    <div style={{ display:"flex", justifyContent:"space-between", padding:"8px 12px", background: fsClaimers.reduce((s,c)=>s+Number(c.bp),0)===10000 ? "rgba(52,211,153,.06)" : "rgba(251,59,59,.06)", borderRadius:"6px", fontSize:".8rem" }}>
+                      <span>Total</span>
+                      <span style={{ fontFamily:"var(--mono)", fontWeight:700, color: fsClaimers.reduce((s,c)=>s+Number(c.bp),0)===10000 ? "var(--green)" : "var(--danger)" }}>
+                        {fsClaimers.reduce((s,c)=>s+Number(c.bp),0)} / 10 000 bp
+                      </span>
+                    </div>
+                    {fsClaimers.length < 100 && (
+                      <button className="btn btn-ghost" style={{ alignSelf:"flex-start", fontSize:".76rem" }}
+                        onClick={() => setFsClaimers(cl => [...cl, { wallet:"", bp:0 }])}>
+                        + Add claimer
+                      </button>
+                    )}
+                    <button className="btn btn-primary" onClick={handleUpdateFeeShare} disabled={fsLoading}>
+                      {fsLoading ? "Updating…" : "✅ Confirm & Sign TX"}
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+
+            {fsTab === "transfer" && (
+              <div style={{ display:"flex", flexDirection:"column", gap:"14px" }}>
+                <div style={{ padding:"12px 14px", background:"rgba(251,191,36,.05)", border:"1px solid rgba(251,191,36,.2)", borderRadius:"8px", fontSize:".8rem", color:"#fbbf24" }}>
+                  ⚠ Transferring admin gives full fee management rights to the new wallet. This cannot be undone without their cooperation.
+                </div>
+                <div className="field">
+                  <label className="label">New admin wallet address</label>
+                  <input className="input" style={{ fontFamily:"var(--mono)", fontSize:".82rem" }}
+                    placeholder="New admin public key"
+                    value={fsNewAdmin} onChange={e => setFsNewAdmin(e.target.value)} />
+                </div>
+                <button className="btn btn-primary" onClick={handleTransferAdmin} disabled={fsLoading || !fsNewAdmin.trim()}>
+                  {fsLoading ? "Transferring…" : "🔑 Transfer Admin Authority"}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── CLAIM FEES MODAL ── */}
+      {claimModal.show && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.88)", backdropFilter:"blur(10px)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:"20px" }}>
+          <div className="card" style={{ maxWidth:"460px", width:"100%", padding:"32px" }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"6px" }}>
+              <h2 style={{ fontWeight:800, margin:0 }}>💰 Claim Bags Fees</h2>
+              <button onClick={() => setClaimModal({ show:false, project:null })} style={{ background:"none", border:"none", color:"var(--text3)", fontSize:"1.4rem", cursor:"pointer" }}>×</button>
+            </div>
+            <p style={{ color:"var(--text3)", fontSize:".84rem", marginBottom:"20px" }}>
+              Token: <strong style={{ color:"var(--accent)" }}>${claimModal.project?.symbol}</strong>
+            </p>
+
+            {claimLoading ? (
+              <div style={{ textAlign:"center", padding:"24px", color:"var(--text3)" }}>
+                <div className="spinner" style={{ margin:"0 auto 12px" }} />
+                Loading claimable fees…
+              </div>
+            ) : claimTxs.length === 0 ? (
+              <div style={{ textAlign:"center", padding:"24px 0", color:"var(--text3)", fontSize:".88rem" }}>
+                No claimable fees at this time.<br />
+                <span style={{ fontSize:".78rem" }}>Fees accumulate as your token is traded on Bags.</span>
+              </div>
+            ) : (
+              <div style={{ display:"flex", flexDirection:"column", gap:"14px" }}>
+                <div style={{ padding:"12px 14px", background:"rgba(52,211,153,.06)", border:"1px solid rgba(52,211,153,.2)", borderRadius:"8px", fontSize:".82rem" }}>
+                  <strong style={{ color:"var(--green)" }}>{claimTxs.length} transaction{claimTxs.length !== 1 ? "s" : ""}</strong> ready to claim.
+                  Each TX must be signed individually.
+                </div>
+                <button className="btn btn-primary" onClick={handleExecuteClaim} disabled={claimLoading}
+                  style={{ background:"linear-gradient(90deg, #059669 0%, #34d399 100%)", border:"none" }}>
+                  {claimLoading ? "Claiming…" : "💰 Sign & Claim All Fees"}
+                </button>
+              </div>
+            )}
+
+            <button className="btn btn-ghost" style={{ width:"100%", marginTop:"12px" }}
+              onClick={() => setClaimModal({ show:false, project:null })}>Close</button>
+          </div>
+        </div>
+      )}
       {rModal.show && (
         <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.88)", backdropFilter:"blur(10px)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:"20px" }}>
           <div className="card" style={{ maxWidth:"480px", width:"100%", padding:"32px" }}>

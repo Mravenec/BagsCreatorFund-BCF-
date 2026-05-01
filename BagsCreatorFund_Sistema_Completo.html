@@ -206,28 +206,48 @@ footer strong{color:var(--text2);font-weight:500}
   <div class="step">
     <div class="step-n">1</div>
     <div>
-      <h4>Identidad del token</h4>
-      <p>El creador ingresa nombre, símbolo, descripción e imagen. BCF llama a <code>POST /token-launch/create-token-info</code> en la API de Bags.</p>
+      <h4>Project Info</h4>
+      <p>El creador ingresa nombre, símbolo, descripción, imagen e imagen (URL). BCF llama a <code>POST /token-launch/create-token-info</code> (FormData) en la API de Bags.</p>
     </div>
   </div>
   <div class="step">
     <div class="step-n">2</div>
     <div>
-      <h4>Configurar Fee Share</h4>
-      <p>El creador elige el modo de fee (Estándar 2%, Alto Inicial, etc.). BCF configura <code>claimersArray: [creator_wallet]</code> para que el 100% de los trading fees vaya al creador.</p>
+      <h4>Launch Type — LAUNCH TYPE dropdown</h4>
+      <p>El creador elige uno de los 4 modos de fee disponibles en la API (<code>bagsConfigType</code>):<br>
+        • <strong>Founder Mode</strong> — 2% flat, earn 1% of total trading volume (UUID: <code>fa29606e…</code>)<br>
+        • <strong>Low Early → High After</strong> — 0.25% pre-migration → 1% post (UUID: <code>d16d3585…</code>)<br>
+        • <strong>High Early → Low After</strong> — 1% pre-migration → 0.25% post (UUID: <code>a7c8e1f2…</code>)<br>
+        • <strong>Paper Hand Tax Mode</strong> — 10% flat, 50% added to LP (UUID: <code>48e26d2f…</code>)<br>
+        <em>Company Mode está disponible post-lanzamiento desde el Dashboard (flujo <code>/incorporate/*</code>).</em>
+      </p>
     </div>
   </div>
   <div class="step">
     <div class="step-n">3</div>
     <div>
-      <h4>Firma y lanzamiento</h4>
-      <p>El usuario firma con Phantom/Solflare. El token queda vivo en Bags Mainnet en <code>bags.fm/token/&lt;mint&gt;</code>. El sistema registra el <code>mint address</code> en el contrato BCF.</p>
+      <h4>Fee Sharing — hasta 100 claimers</h4>
+      <p>BCF configura <code>claimersArray</code> y <code>basisPointsArray</code> (suma = 10 000 bp = 100%). Por defecto el creador recibe el 100%, pero puede distribuir fees entre múltiples wallets, apps, o colaboradores. Editable después del lanzamiento desde el Dashboard via <code>POST /fee-share/admin/update-config</code>.</p>
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-n">4</div>
+    <div>
+      <h4>Ownership — Initial Buy (opcional)</h4>
+      <p>El creador puede comprar tokens antes que nadie (buy at launch). Se especifica el monto en SOL (<code>initialBuyLamports</code>). La UI muestra presets: Skip / 0.1 / 0.5 / 1 / 2.5 SOL.</p>
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-n">5</div>
+    <div>
+      <h4>Review & Launch — firma Mainnet</h4>
+      <p>El usuario revisa todo y firma con Phantom/Solflare. BCF ejecuta los 4 pasos de la API de Bags: metadata → fee-share config TX → launch TX → broadcast. El token queda vivo en <code>bags.fm/token/&lt;mint&gt;</code>.</p>
     </div>
   </div>
 </div>
 
 <div class="box teal">
-  <strong>Fallback DevNet:</strong> Si la API de Bags no responde (entorno de pruebas), el sistema usa un mint simulado y continúa creando el <code>ProjectAccount</code> on-chain. Todas las funciones de campaña funcionan normalmente para testing.
+  <strong>Fallback DevNet:</strong> Si la API de Bags no responde, el sistema usa un mint simulado y continúa creando el <code>ProjectAccount</code> on-chain. Todas las funciones de campaña funcionan normalmente para testing.
 </div>
 </div>
 
@@ -598,6 +618,13 @@ footer strong{color:var(--text2);font-weight:500}
 
 <p>El contrato Anchor/Rust es el mismo código en ambas redes. La diferencia es únicamente el cluster y si el SOL es real.</p>
 
+<div class="box blue" style="margin-bottom:18px">
+  <strong>Arquitectura de dos capas simultáneas:</strong> BCF siempre usa dos redes al mismo tiempo, sin importar el valor de <code>VITE_NETWORK</code>.<br><br>
+  <strong>Capa 1 — Bags (siempre Mainnet):</strong> El token, el fee-share config, el trading, el claim de fees y el swap del flywheel van siempre a <code>api.mainnet-beta.solana.com</code>. Esto está hardcodeado en <code>bags.js</code> con <code>mainnetConnection</code> y no cambia.<br><br>
+  <strong>Capa 2 — BCF Program (controlado por <code>VITE_NETWORK</code>):</strong> Los <code>ProjectAccount</code>, <code>CampaignAccount</code>, <code>PositionVault</code>, treasury y resolución van al cluster configurado — DevNet para desarrollo, Mainnet para producción.<br><br>
+  Para producción completa solo se necesita: desplegar el programa Anchor en Mainnet, actualizar <code>VITE_BCF_PROGRAM_ID_MAINNET</code> y cambiar <code>VITE_NETWORK=mainnet</code>.
+</div>
+
 <table class="tbl">
 <thead><tr><th>Característica</th><th><span class="badge dev">● DevNet</span></th><th><span class="badge main">● Mainnet</span></th></tr></thead>
 <tbody>
@@ -608,7 +635,7 @@ footer strong{color:var(--text2);font-weight:500}
 <tr><td>Watcher automático</td><td><span class="tick">✓</span> RPC → devnet</td><td><span class="tick">✓</span> RPC → mainnet-beta</td></tr>
 <tr><td>Aleatoriedad slot hash</td><td><span class="tick">✓</span> Slots de DevNet</td><td><span class="tick">✓</span> Slots de Mainnet</td></tr>
 <tr><td>Reinvestment flywheel</td><td><span class="warn">⚠</span> SOL sin valor en Bags</td><td><span class="tick">✓</span> Bags Trade API · compra real</td></tr>
-<tr><td>Bags trading fees</td><td>— solo en Mainnet</td><td><span class="tick">✓</span> /claim-txs/v3</td></tr>
+<tr><td>Bags trading fees</td><td>— solo en Mainnet</td><td><span class="tick">✓</span> /fee-claiming/claim-transactions (v3)</td></tr>
 <tr><td>Costo de deploy</td><td><span class="tick">✓</span> Gratis (faucet)</td><td><span class="warn">~2.3 SOL real</span></td></tr>
 </tbody>
 </table>
@@ -632,7 +659,16 @@ footer strong{color:var(--text2);font-weight:500}
   <div class="card">
     <div class="card-icon">💸</div>
     <h3>Fee Share V2</h3>
-    <p><code>claimersArray: [creator_wallet]</code> — 100% de los fees de trading van al creador. Configurado en el lanzamiento.</p>
+    <p><code>claimersArray: [creator_wallet]</code> — por defecto 100% de los fees de trading van al creador. Configurable en el lanzamiento con hasta 100 receptores.</p>
+
+    <div class="box green" style="margin-top:14px">
+      <strong>Dashboard — Gestión post-lanzamiento:</strong><br>
+      • <strong>Manage Fee Sharing</strong>: actualiza claimers/% via <code>POST /fee-share/admin/update-config</code> (firma TX)<br>
+      • <strong>Transfer Admin</strong>: transfiere la autoridad admin a otra wallet via <code>POST /fee-share/admin/transfer-tx</code><br>
+      • <strong>Claim Bags Fees</strong>: reclama fees acumulados via <code>POST /fee-claiming/claim-transactions</code> (v3)<br>
+      • <strong>Lifetime Fees</strong>: muestra total histórico via <code>GET /analytics/lifetime-fees</code><br>
+      • <strong>Company Mode</strong>: inicia incorporación legal via endpoints <code>/incorporate/*</code>
+    </div>
   </div>
   <div class="card">
     <div class="card-icon">🔄</div>
@@ -642,7 +678,7 @@ footer strong{color:var(--text2);font-weight:500}
   <div class="card">
     <div class="card-icon">🏦</div>
     <h3>Claim Fees</h3>
-    <p><code>POST /token-launch/claim-txs/v3</code> para reclamar ingresos de trading acumulados directamente desde el Dashboard.</p>
+    <p><code>POST /token-launch/fee-claiming/claim-transactions (v3)</code> para reclamar ingresos de trading acumulados directamente desde el Dashboard.</p>
   </div>
 </div>
 </div>
