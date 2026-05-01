@@ -15,6 +15,7 @@ import { toUSDC, TOKENS_PER_SOL, TREASURY_FEE_PCT, BCF_PROGRAM_ID, WATCHER_URL, 
 import { shortAddr, explorerTx, getSOLBalance, requestAirdrop } from "../lib/solana.js";
 import { bagsTokenUrl } from "../lib/bags.js";
 import { useToast } from "../components/Toast.jsx";
+import { getToken } from "../lib/store.js";
 
 const SOL = LAMPORTS_PER_SOL;
 
@@ -577,35 +578,63 @@ function VaultCEXTab({ campaign, positionIndex, price, lamports, connection,
     setSweeping(true);
     setAutoStatus('Assigning position on-chain…');
     const recipient = recipientRef.current || recipientAddr;
+    
+    let fetchSuccess = false;
+    let json = {};
+    let resp;
+
     try {
-      const resp = await fetch(`${WATCHER_URL}/sweep-now`, {
+      resp = await fetch(`${WATCHER_URL}/sweep-now`, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ campaign: campaign.pda, positionIndex, recipient }),
         signal:  AbortSignal.timeout(35000),
       });
-      const json = await resp.json().catch(() => ({}));
+      json = await resp.json().catch(() => ({}));
+      fetchSuccess = true;
+    } catch(e) {
+      setAutoStatus('');
+      if (e.name === 'AbortError' || e.name === 'TimeoutError') {
+        toast('Tiempo de espera agotado. El watcher puede estar procesando una TX. Intenta de nuevo.', 'error');
+      } else {
+        toast('No se pudo contactar al watcher. Inicia con: bash scripts/deploy.sh', 'error');
+        console.warn('[BCF-CEX] Watcher inalcanzable:', e.message);
+      }
+      sweepingRef.current = false;
+      setSweeping(false);
+      return;
+    }
+
+    if (fetchSuccess) {
       if (resp.ok && json.ok) {
-        // TX confirmed by watcher — verify on-chain (blockchain is truth, not localStorage)
-        const mockWallet = { publicKey: new PublicKey('11111111111111111111111111111111') };
-        const prov    = new AnchorProvider(connection, mockWallet, { commitment: 'confirmed' });
-        const account = await fetchCampaign(prov, campaign.pda);
-        const posOwner = account?.positions?.[positionIndex]?.owner?.toBase58?.();
-        if (posOwner && posOwner !== '11111111111111111111111111111111') {
-          sweptRef.current = true;
-          setSwept(true);
+        // TX confirmed by watcher — verify on-chain
+        try {
+          const mockWallet = { publicKey: new PublicKey('11111111111111111111111111111111') };
+          const prov    = new AnchorProvider(connection, mockWallet, { commitment: 'confirmed' });
+          const account = await fetchCampaign(prov, campaign.pda);
+          const posOwner = account?.positions?.[positionIndex]?.owner?.toBase58?.();
+          
+          if (posOwner && posOwner !== '11111111111111111111111111111111') {
+            sweptRef.current = true;
+            setSwept(true);
+            setAutoStatus('');
+            // localStorage hint only
+            saveCEXPosition(campaign.pda, positionIndex, recipient, {
+              title: campaign.title, tokenSymbol: campaign.tokenSymbol,
+              positionPriceSOL: campaign.positionPriceSOL,
+            });
+            toast(`✅ Position #${String(positionIndex).padStart(2,'0')} secured on-chain!`, 'success');
+            if (account) onSuccess(campaignAccountToDisplay(campaign.pda, account));
+            setTimeout(onClose, 2500);
+          } else {
+            setAutoStatus('');
+            console.warn('[BCF-CEX] TX sent but on-chain not yet confirmed — polling will catch it');
+            toast('Transacción enviada, esperando confirmación...', 'info');
+          }
+        } catch (chainErr) {
           setAutoStatus('');
-          // localStorage hint only — used for winner banner, not for state
-          saveCEXPosition(campaign.pda, positionIndex, recipient, {
-            title: campaign.title, tokenSymbol: campaign.tokenSymbol,
-            positionPriceSOL: campaign.positionPriceSOL,
-          });
-          toast(`✅ Position #${String(positionIndex).padStart(2,'0')} secured on-chain!`, 'success');
-          if (account) onSuccess(campaignAccountToDisplay(campaign.pda, account));
-          setTimeout(onClose, 2500);
-        } else {
-          setAutoStatus('');
-          console.warn('[BCF-CEX] TX sent but on-chain not yet confirmed — polling will catch it');
+          console.warn('[BCF-CEX] TX sent but fetchCampaign failed:', chainErr.message);
+          toast('Posición asignada, esperando sincronización de red...', 'info');
         }
       } else {
         setAutoStatus('');
@@ -616,21 +645,12 @@ function VaultCEXTab({ campaign, positionIndex, price, lamports, connection,
           toast('El watcher no está corriendo. Usa bash scripts/deploy.sh para iniciar todo.', 'error');
         } else if (errMsg.includes('insuficientes') || errMsg.includes('underfunded') || errMsg.includes('Insufficient')) {
           toast('El vault aún no tiene fondos suficientes. Espera un momento y vuelve a intentarlo.', 'error');
-        } else if (errMsg.includes('PositionTaken')) {
+        } else if (errMsg.includes('PositionTaken') || errMsg.includes('ya asignada')) {
           toast('Alguien más tomó esa posición. Elige otra.', 'error');
         } else {
           toast('Error del watcher: ' + (errMsg || `HTTP ${resp.status}`).slice(0, 100), 'error');
         }
       }
-    } catch(e) {
-      setAutoStatus('');
-      if (e.name === 'AbortError' || e.name === 'TimeoutError') {
-        toast('Tiempo de espera agotado. El watcher puede estar procesando una TX. Intenta de nuevo.', 'error');
-      } else {
-        toast('No se pudo contactar al watcher. Inicia con: bash scripts/deploy.sh', 'error');
-        console.warn('[BCF-CEX] Watcher inalcanzable:', e.message);
-      }
-    } finally {
       sweepingRef.current = false;
       setSweeping(false);
     }

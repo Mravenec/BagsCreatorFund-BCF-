@@ -16,6 +16,7 @@ import { bagsTokenUrl, isRealMint, getTokenMarketData, executeReinvest,
   getLifetimeFees, checkDexscreenerAvailability } from "../lib/bags.js";
 import { IS_MAINNET, NETWORK, SOL_MINT } from "../lib/constants.js";
 import { useToast } from "../components/Toast.jsx";
+import { sortCampaignsByPriority } from "../utils/campaignSorting.js";
 
 export default function DashboardPage() {
   const { connection } = useConnection();
@@ -91,7 +92,7 @@ export default function DashboardPage() {
           return campaignAccountToDisplay(pda, acc);
         } catch { return null; }
       }).filter(Boolean);
-      setCampaigns(mapped);
+      setCampaigns(sortCampaignsByPriority(mapped));
 
       // 3. Balance
       const b = await getSOLBalance(pubkeyStr);
@@ -547,89 +548,34 @@ export default function DashboardPage() {
             )}
           </div>
         ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: "24px" }}>
-            {visibleCampaigns.map(c => {
-              const isSettled = c.status === "settled";
-              const isWinner  = c.hasWinner && c.winnerWallet === wallet.publicKey.toBase58();
-              const expired   = isExpired(c);
-              const proj      = projects.find(p => p.projectIndex === c.projectIndex);
-
-              return (
-                <div key={c.pda} className="card shadow-hover" style={{ padding: "22px", display: "flex", flexDirection: "column", minHeight: "260px" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "14px" }}>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: "7px", marginBottom: "4px", flexWrap: "wrap" }}>
-                        <span style={{ fontSize: ".6rem", textTransform: "uppercase", fontWeight: 700, color: c.status === "active" ? "var(--green)" : "var(--text3)" }}>● {c.status}</span>
-                        {proj && (
-                          <span style={{ fontSize: ".62rem", color: "var(--accent)", fontWeight: 700, fontFamily: "var(--mono)", background: "rgba(56,189,248,.08)", padding: "1px 5px", borderRadius: "4px" }}>
-                            ${proj.symbol} #{proj.projectIndex}
-                          </span>
-                        )}
-                      </div>
-                      <Link to={`/campaign/${c.pda}`} style={{ textDecoration: "none", color: "inherit" }}>
-                        <h3 style={{ fontWeight: 800, fontSize: "1rem", margin: 0, lineHeight: 1.3 }}>{c.title}</h3>
-                      </Link>
-                      <div style={{ fontSize: ".7rem", color: "var(--text3)", marginTop: "3px" }}>
-                        {c.status === "active"
-                          ? <span style={{ color: expired ? "var(--danger)" : "var(--text2)", fontWeight: 600 }}>{timeLeft(c.deadline)}</span>
-                          : <span>{c.status === "settled" ? "Finished" : "Awaiting deposit"}</span>
-                        }
-                      </div>
-                    </div>
-                    <span style={{ fontSize: ".7rem", fontWeight: 600, background: "var(--bg2)", padding: "3px 9px", borderRadius: "6px", border: "1px solid var(--border)", whiteSpace: "nowrap" }}>
-                      🎯 {posStatus(c).toString().padStart(2, "0")}/100
-                    </span>
-                  </div>
-
-                  {isSettled && (
-                    <div style={{ padding: "8px 12px", borderRadius: "8px", marginBottom: "12px", background: c.hasWinner ? "rgba(56,189,248,.06)" : "rgba(52,211,153,.06)", border: "1px solid " + (c.hasWinner ? "rgba(56,189,248,.15)" : "rgba(52,211,153,.15)"), display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <span style={{ fontSize: ".72rem", fontWeight: 700, color: c.hasWinner ? "var(--accent)" : "var(--green)" }}>
-                        {c.hasWinner ? "🏆 WINNER" : "🏦 NO WINNER"}
-                      </span>
-                      <span style={{ fontSize: ".68rem", color: "var(--text3)", fontFamily: "var(--mono)" }}>#{fmtPos(c.winningPosition)}</span>
-                    </div>
-                  )}
-
-                  <div style={{ display: "flex", gap: "8px", marginBottom: "16px" }}>
-                    {[["Collected", `${c.totalCollectedSOL.toFixed(3)} SOL`, "var(--accent)"], ["Prize", `${c.prizeSOL} SOL`, "var(--text)"]].map(([l, v, col]) => (
-                      <div key={l} style={{ flex: 1, padding: "8px 10px", background: "var(--bg2)", borderRadius: "7px", border: "1px solid var(--border)" }}>
-                        <div style={{ fontSize: ".58rem", color: "var(--text3)", textTransform: "uppercase", marginBottom: "1px" }}>{l}</div>
-                        <div style={{ fontWeight: 800, fontSize: ".9rem", color: col }}>{v}</div>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div style={{ marginTop: "auto", display: "flex", gap: "8px" }}>
-                    <Link to={`/campaign/${c.pda}`} className="btn btn-sm btn-secondary"
-                      style={{ flex: 1, textAlign: "center", fontSize: ".72rem", display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(255,255,255,.03)", border: "1px solid var(--border)" }}>
-                      📋 Details
-                    </Link>
-
-                    {isWinner && <button onClick={() => handleClaim(c)} className="btn btn-sm btn-primary" style={{ flex: 1, fontSize: ".72rem" }}>⚡ Claim</button>}
-
-                    {c.status === "active" && expired && (
-                      <button onClick={() => handleResolve(c)} className="btn btn-sm btn-primary" style={{ flex: 1.5, fontSize: ".72rem", background: "var(--accent)" }}>
-                        🎲 Resolve
-                      </button>
-                    )}
-
-                    {isSettled && !c.hasWinner && (
-                      <button onClick={() => handleRoute(c)} className="btn btn-sm btn-secondary"
-                        disabled={c.prizeSOL <= 0}
-                        style={{ flex: 1.5, fontSize: ".72rem", opacity: c.prizeSOL <= 0 ? 0.5 : 1 }}>
-                        {c.prizeSOL <= 0 ? "✅ In Treasury" : "🏦 → Treasury"}
-                      </button>
-                    )}
-
-                    {isSettled && c.hasWinner && (
-                      <button disabled className="btn btn-sm btn-outline" style={{ flex: 1.5, fontSize: ".72rem", opacity: 0.7 }}>
-                        🏆 #{fmtPos(c.winningPosition)}
-                      </button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
+          <div>
+            <CampaignSection 
+              title="🔥 Active Campaigns" 
+              campaigns={visibleCampaigns.filter(c => c.status === 'active')} 
+              wallet={wallet} 
+              projects={projects} 
+              handleClaim={handleClaim} 
+              handleResolve={handleResolve} 
+              handleRoute={handleRoute} 
+            />
+            <CampaignSection 
+              title="⏳ Upcoming Campaigns" 
+              campaigns={visibleCampaigns.filter(c => c.status === 'pending')} 
+              wallet={wallet} 
+              projects={projects} 
+              handleClaim={handleClaim} 
+              handleResolve={handleResolve} 
+              handleRoute={handleRoute} 
+            />
+            <CampaignSection 
+              title="📊 Completed Campaigns" 
+              campaigns={visibleCampaigns.filter(c => ['settled', 'finished'].includes(c.status))} 
+              wallet={wallet} 
+              projects={projects} 
+              handleClaim={handleClaim} 
+              handleResolve={handleResolve} 
+              handleRoute={handleRoute} 
+            />
           </div>
         )}
       </section>
@@ -910,3 +856,115 @@ export default function DashboardPage() {
     </div>
   );
 }
+
+const CampaignSection = ({ title, campaigns, wallet, projects, handleClaim, handleResolve, handleRoute }) => {
+  if (campaigns.length === 0) return null;
+  
+  return (
+    <div style={{ marginBottom: '32px' }}>
+      <h2 style={{ 
+        fontSize: '1.2rem', 
+        fontWeight: '700', 
+        marginBottom: '16px',
+        color: 'var(--text)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px'
+      }}>
+        {title}
+        <span style={{ 
+          fontSize: '0.8rem', 
+          color: 'var(--text2)',
+          fontWeight: '400'
+        }}>
+          ({campaigns.length})
+        </span>
+      </h2>
+      
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: "24px" }}>
+        {campaigns.map(c => {
+          const isSettled = c.status === "settled";
+          const isWinner  = c.hasWinner && c.winnerWallet === wallet?.publicKey?.toBase58();
+          const expired   = isExpired(c);
+          const proj      = projects.find(p => p.projectIndex === c.projectIndex);
+
+          return (
+            <div key={c.pda} className="card shadow-hover" style={{ padding: "22px", display: "flex", flexDirection: "column", minHeight: "260px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "14px" }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "7px", marginBottom: "4px", flexWrap: "wrap" }}>
+                    <span style={{ fontSize: ".6rem", textTransform: "uppercase", fontWeight: 700, color: c.status === "active" ? "var(--green)" : "var(--text3)" }}>● {c.status}</span>
+                    {proj && (
+                      <span style={{ fontSize: ".62rem", color: "var(--accent)", fontWeight: 700, fontFamily: "var(--mono)", background: "rgba(56,189,248,.08)", padding: "1px 5px", borderRadius: "4px" }}>
+                        ${proj.symbol} #{proj.projectIndex}
+                      </span>
+                    )}
+                  </div>
+                  <Link to={`/campaign/${c.pda}`} style={{ textDecoration: "none", color: "inherit" }}>
+                    <h3 style={{ fontWeight: 800, fontSize: "1rem", margin: 0, lineHeight: 1.3 }}>{c.title}</h3>
+                  </Link>
+                  <div style={{ fontSize: ".7rem", color: "var(--text3)", marginTop: "3px" }}>
+                    {c.status === "active"
+                      ? <span style={{ color: expired ? "var(--danger)" : "var(--text2)", fontWeight: 600 }}>{timeLeft(c.deadline)}</span>
+                      : <span>{c.status === "settled" ? "Finished" : "Awaiting deposit"}</span>
+                    }
+                  </div>
+                </div>
+                <span style={{ fontSize: ".7rem", fontWeight: 600, background: "var(--bg2)", padding: "3px 9px", borderRadius: "6px", border: "1px solid var(--border)", whiteSpace: "nowrap" }}>
+                  🎯 {posStatus(c).toString().padStart(2, "0")}/100
+                </span>
+              </div>
+
+              {isSettled && (
+                <div style={{ padding: "8px 12px", borderRadius: "8px", marginBottom: "12px", background: c.hasWinner ? "rgba(56,189,248,.06)" : "rgba(52,211,153,.06)", border: "1px solid " + (c.hasWinner ? "rgba(56,189,248,.15)" : "rgba(52,211,153,.15)"), display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{ fontSize: ".72rem", fontWeight: 700, color: c.hasWinner ? "var(--accent)" : "var(--green)" }}>
+                    {c.hasWinner ? "🏆 WINNER" : "🏦 NO WINNER"}
+                  </span>
+                  <span style={{ fontSize: ".68rem", color: "var(--text3)", fontFamily: "var(--mono)" }}>#{fmtPos(c.winningPosition)}</span>
+                </div>
+              )}
+
+              <div style={{ display: "flex", gap: "8px", marginBottom: "16px" }}>
+                {[["Collected", `${c.totalCollectedSOL.toFixed(3)} SOL`, "var(--accent)"], ["Prize", `${c.prizeSOL} SOL`, "var(--text)"]].map(([l, v, col]) => (
+                  <div key={l} style={{ flex: 1, padding: "8px 10px", background: "var(--bg2)", borderRadius: "7px", border: "1px solid var(--border)" }}>
+                    <div style={{ fontSize: ".58rem", color: "var(--text3)", textTransform: "uppercase", marginBottom: "1px" }}>{l}</div>
+                    <div style={{ fontWeight: 800, fontSize: ".9rem", color: col }}>{v}</div>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ marginTop: "auto", display: "flex", gap: "8px" }}>
+                <Link to={`/campaign/${c.pda}`} className="btn btn-sm btn-secondary"
+                  style={{ flex: 1, textAlign: "center", fontSize: ".72rem", display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(255,255,255,.03)", border: "1px solid var(--border)" }}>
+                  📋 Details
+                </Link>
+
+                {isWinner && <button onClick={() => handleClaim(c)} className="btn btn-sm btn-primary" style={{ flex: 1, fontSize: ".72rem" }}>⚡ Claim</button>}
+
+                {c.status === "active" && expired && (
+                  <button onClick={() => handleResolve(c)} className="btn btn-sm btn-primary" style={{ flex: 1.5, fontSize: ".72rem", background: "var(--accent)" }}>
+                    🎲 Resolve
+                  </button>
+                )}
+
+                {isSettled && !c.hasWinner && (
+                  <button onClick={() => handleRoute(c)} className="btn btn-sm btn-secondary"
+                    disabled={c.prizeSOL <= 0}
+                    style={{ flex: 1.5, fontSize: ".72rem", opacity: c.prizeSOL <= 0 ? 0.5 : 1 }}>
+                    {c.prizeSOL <= 0 ? "✅ In Treasury" : "🏦 → Treasury"}
+                  </button>
+                )}
+
+                {isSettled && c.hasWinner && (
+                  <button disabled className="btn btn-sm btn-outline" style={{ flex: 1.5, fontSize: ".72rem", opacity: 0.7 }}>
+                    🏆 #{fmtPos(c.winningPosition)}
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};

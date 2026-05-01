@@ -1,9 +1,9 @@
-import { IS_MAINNET, NETWORK } from '../lib/constants.js';
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { fetchAllCampaigns } from "../lib/programClient.js";
 import { useConnection } from "@solana/wallet-adapter-react";
 import { CATEGORIES } from "../lib/constants.js";
 import CampaignCard from "../components/CampaignCard.jsx";
+import { sortCampaignsByPriority } from '../utils/campaignSorting.js';
 
 const STATUS = [
   { v:"all", l:"All" }, { v:"active", l:"Active" },
@@ -29,31 +29,45 @@ export default function ExplorePage() {
     load();
   }, [connection]);
 
-  const sorted = [...all].sort((a, b) => {
-    const priorities = { active: 1, pending: 2, settled: 3, cancelled: 4 };
-    const pa = priorities[a.status] || 99;
-    const pb = priorities[b.status] || 99;
-    if (pa !== pb) return pa - pb;
-    // Secondary sort: newest first
-    return (b.createdAt || 0) - (a.createdAt || 0);
-  });
+  // Apply filters and sorting
+  const filteredAndSortedCampaigns = useMemo(() => {
+    let filtered = all;
 
-  const filtered = sorted.filter(c => {
-    if (status !== "all" && c.status !== status) return false;
-    if (category !== "all" && c.category !== category) return false;
+    // Search filter
     if (search) {
       const q = search.toLowerCase();
-      if (!c.title.toLowerCase().includes(q) && !c.description?.toLowerCase().includes(q)) return false;
+      filtered = filtered.filter(campaign => 
+        campaign.title?.toLowerCase().includes(q) ||
+        campaign.description?.toLowerCase().includes(q)
+      );
     }
-    return true;
-  });
+
+    // Status filter
+    if (status !== 'all') {
+      // NOTE: "settled" maps to both "settled" and "finished" logic-wise, but since the status is string, we just match it.
+      filtered = filtered.filter(campaign => campaign.status === status);
+    }
+
+    // Category filter
+    if (category !== 'all') {
+      filtered = filtered.filter(campaign => campaign.category === category);
+    }
+
+    // Apply priority sorting
+    return sortCampaignsByPriority(filtered);
+  }, [all, search, status, category]);
+
+  // Group by status
+  const activeCampaigns = filteredAndSortedCampaigns.filter(c => c.status === 'active');
+  const pendingCampaigns = filteredAndSortedCampaigns.filter(c => c.status === 'pending');
+  const completedCampaigns = filteredAndSortedCampaigns.filter(c => ['settled', 'finished'].includes(c.status));
 
   return (
     <div style={{ padding:"46px 28px", maxWidth:"1200px", margin:"0 auto" }}>
       <div style={{ marginBottom:"34px" }}>
         <div className="section-label">Discover</div>
         <h1 style={{ fontSize:"2rem", letterSpacing:"-.03em", marginBottom:"6px" }}>All Campaigns</h1>
-        <p style={{ color:"var(--text2)", fontSize:".88rem" }}>{all.length} campaign{all.length!==1?"s":""} on BagsCreatorFund</p>
+        <p style={{ color:"var(--text2)", fontSize:".88rem" }}>{filteredAndSortedCampaigns.length} campaign{filteredAndSortedCampaigns.length !== 1 ? "s" : ""} found</p>
       </div>
 
       <div style={{ display:"flex", gap:"10px", flexWrap:"wrap", marginBottom:"28px", padding:"18px", background:"var(--bg1)", border:"1px solid var(--border)", borderRadius:"var(--rl)" }}>
@@ -69,15 +83,50 @@ export default function ExplorePage() {
 
       {loading ? (
         <div style={{ textAlign:"center", padding:"70px 24px" }}><span className="spin">⟳</span> Loading on-chain campaigns...</div>
-      ) : filtered.length===0 ? (
+      ) : filteredAndSortedCampaigns.length === 0 ? (
         <div style={{ textAlign:"center", padding:"70px 24px", border:"1px dashed var(--border2)", borderRadius:"var(--rl)" }}>
           <div style={{ fontSize:"2rem", marginBottom:"10px" }}>🔍</div>
           <h3 style={{ fontWeight:700, marginBottom:"6px" }}>No campaigns found</h3>
-          <p style={{ color:"var(--text2)", fontSize:".88rem" }}>Try adjusting your filters.</p>
+          <p style={{ color:"var(--text2)", fontSize:".88rem" }}>Try adjusting your filters or search terms.</p>
         </div>
       ) : (
-        <div className="campaign-grid">{filtered.map(c => <CampaignCard key={c.id} campaign={c} />)}</div>
+        <>
+          <CampaignSection title="🔥 Active Campaigns" campaigns={activeCampaigns} />
+          <CampaignSection title="⏳ Upcoming Campaigns" campaigns={pendingCampaigns} />
+          <CampaignSection title="📊 Completed Campaigns" campaigns={completedCampaigns} />
+        </>
       )}
     </div>
   );
 }
+
+const CampaignSection = ({ title, campaigns }) => {
+  if (campaigns.length === 0) return null;
+  
+  return (
+    <div style={{ marginBottom: '32px' }}>
+      <h2 style={{ 
+        fontSize: '1.2rem', 
+        fontWeight: '700', 
+        marginBottom: '16px',
+        color: 'var(--text)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px'
+      }}>
+        {title}
+        <span style={{ 
+          fontSize: '0.8rem', 
+          color: 'var(--text2)',
+          fontWeight: '400'
+        }}>
+          ({campaigns.length})
+        </span>
+      </h2>
+      
+      <div className="campaign-grid">
+        {campaigns.map(c => <CampaignCard key={c.id} campaign={c} />)}
+      </div>
+    </div>
+  );
+};
