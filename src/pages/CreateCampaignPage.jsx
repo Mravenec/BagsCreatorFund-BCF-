@@ -102,8 +102,25 @@ export default function CreateCampaignPage() {
       toast("🎉 Campaign created on-chain!", "success");
       navigate(`/campaign/${campaignPDA}`);
     } catch (e) {
-      console.error("[BCF] createCampaign error:", e);
-      toast("Error: " + (e.message || "Failed"), "error");
+      console.error("[BCF] createCampaign error:", {
+        message: e.message,
+        code: e.code,
+        logs: e.logs,
+        stack: e.stack,
+        original: e
+      });
+      
+      let errorMessage = e.message || "Campaign creation failed";
+      if (e.code === 4000) errorMessage = "Invalid campaign data";
+      else if (e.code === 4001) errorMessage = "Insufficient SOL for rent";
+      else if (e.code === 4002) errorMessage = "Program not found";
+      
+      // Fallback si es el famoso objeto vacío `{}`
+      if (!e.message && Object.keys(e).length === 0) {
+         errorMessage = "Unknown transaction error (Check wallet approval or SOL balance)";
+      }
+      
+      toast("Error: " + errorMessage.slice(0, 80), "error");
     } finally {
       setLoading(false);
     }

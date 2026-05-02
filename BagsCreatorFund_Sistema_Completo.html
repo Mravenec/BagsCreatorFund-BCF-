@@ -129,8 +129,7 @@ footer strong{color:var(--text2);font-weight:500}
     <span class="chip hi">Meteora DBC</span>
     <span class="chip">Solana DevNet &amp; Mainnet</span>
     <span class="chip">CEX sin memo · cualquier exchange</span>
-    <span class="chip">12 instrucciones on-chain</span>
-    <span class="chip">Watcher automático + HTTP API</span>
+    <span class="chip">Arquitectura Serverless $0 (Burner Wallets)</span>
   </div>
 </div>
 
@@ -159,7 +158,7 @@ footer strong{color:var(--text2);font-weight:500}
   <div class="card">
     <div class="card-icon">🏦</div>
     <h3>CEX sin fricción</h3>
-    <p>Usuarios de Binance, Coinbase, OKX, Kraken o cualquier exchange participan enviando SOL a una <strong>dirección vault única por posición</strong> — sin memo, sin wallet Web3 obligatoria.</p>
+    <p>Usuarios de Binance, Coinbase, OKX, Kraken o cualquier exchange participan enviando SOL a una <strong>Burner Wallet temporal de un solo uso</strong> — sin memo, sin wallet Web3 obligatoria.</p>
   </div>
 </div>
 
@@ -389,7 +388,7 @@ footer strong{color:var(--text2);font-weight:500}
 <hr style="border:none;border-top:1px solid var(--border);margin:26px 0 20px">
 
 <h3>Camino 2 — Exchange / CEX (Binance · Coinbase · OKX · Kraken · cualquier dirección Solana)</h3>
-<p style="font-size:.87rem">Sin wallet Web3 obligatoria, sin memo. Cada posición tiene su propio vault PDA. El watcher crea el vault on-chain en cuanto el usuario ingresa su dirección, y asigna la posición automáticamente cuando el SOL llega.</p>
+<p style="font-size:.87rem">Sin wallet Web3 obligatoria, sin memo. El frontend genera una <strong>Burner Wallet</strong> temporal en el navegador y monitoriza los fondos on-chain. Cuando el usuario envía el SOL, el frontend usa la Burner Wallet para comprar la posición y asignar el premio al recipient, rembolsando cualquier saldo sobrante.</p>
 
 <div class="diagram">
 <svg viewBox="0 0 860 320" xmlns="http://www.w3.org/2000/svg">
@@ -412,19 +411,19 @@ footer strong{color:var(--text2);font-weight:500}
 
 <line x1="160" y1="56" x2="195" y2="56" stroke="#4f4d70" stroke-width="1" marker-end="url(#a4)"/>
 
-<!-- Step 2: Watcher registers + pre-creates vault -->
+<!-- Step 2: Burner Wallet Generated -->
 <rect x="195" y="10" width="210" height="92" rx="8" fill="#14052e" stroke="#6d28d9" stroke-width="1"/>
-<text x="300" y="32" text-anchor="middle" fill="#8b5cf6" font-family="'Space Mono'" font-size="9" font-weight="700">② Watcher HTTP API</text>
-<text x="300" y="49" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">POST /watch-vault</text>
-<text x="300" y="65" text-anchor="middle" fill="#8b5cf6" font-family="'DM Sans'" font-size="8" font-weight="600">Pre-crea vault on-chain</text>
-<text x="300" y="80" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">seeds: "vault" · campaign · pos · recipient</text>
-<text x="300" y="95" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">Vault PDA lista antes del pago ✓</text>
+<text x="300" y="32" text-anchor="middle" fill="#8b5cf6" font-family="'Space Mono'" font-size="9" font-weight="700">② Generación Burner</text>
+<text x="300" y="49" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">Navegador genera Keypair</text>
+<text x="300" y="65" text-anchor="middle" fill="#8b5cf6" font-family="'DM Sans'" font-size="8" font-weight="600">Local Storage Caching</text>
+<text x="300" y="80" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">Burner Wallet Address mostrada</text>
+<text x="300" y="95" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">Lista para recibir pago ✓</text>
 
 <line x1="405" y1="56" x2="440" y2="56" stroke="#4f4d70" stroke-width="1" marker-end="url(#a4)"/>
 
 <!-- Step 3: Vault address shown -->
 <rect x="440" y="30" width="160" height="52" rx="8" fill="#141428" stroke="#2a2a4a" stroke-width="1"/>
-<text x="520" y="51" text-anchor="middle" fill="#9896b8" font-family="'Space Mono'" font-size="9" font-weight="700">③ Vault Address</text>
+<text x="520" y="51" text-anchor="middle" fill="#9896b8" font-family="'Space Mono'" font-size="9" font-weight="700">③ Send Address</text>
 <text x="520" y="67" text-anchor="middle" fill="#34d399" font-family="'DM Sans'" font-size="8" font-weight="700">sin memo requerido</text>
 <text x="520" y="78" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">mostrada al usuario</text>
 
@@ -433,24 +432,24 @@ footer strong{color:var(--text2);font-weight:500}
 <!-- Step 4: User sends SOL -->
 <rect x="640" y="30" width="190" height="52" rx="8" fill="#141428" stroke="#2a2a4a" stroke-width="1"/>
 <text x="735" y="51" text-anchor="middle" fill="#9896b8" font-family="'Space Mono'" font-size="9" font-weight="700">④ Enviar SOL</text>
-<text x="735" y="65" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">precio + buffer de fees de retiro</text>
+<text x="735" y="65" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">precio exacto</text>
 <text x="735" y="78" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">desde cualquier exchange</text>
 
 <!-- SOL arrives in vault -->
 <path d="M735 82 L735 150 L300 150 L300 110" fill="none" stroke="#2a2a4a" stroke-width="0.8" stroke-dasharray="3 2" marker-end="url(#a4)"/>
-<text x="520" y="145" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">⑤ SOL llega al vault</text>
+<text x="520" y="145" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">⑤ SOL llega al Burner Wallet</text>
 
 <!-- Fee notice box -->
 <rect x="440" y="160" width="390" height="50" rx="7" fill="rgba(251,191,36,.07)" stroke="rgba(251,191,36,.22)" stroke-width="1"/>
 <text x="635" y="181" text-anchor="middle" fill="#fbbf24" font-family="'DM Sans'" font-size="9" font-weight="700">💸 ¿Cuánto enviar desde el exchange?</text>
-<text x="635" y="197" text-anchor="middle" fill="#6d5f9a" font-family="'DM Sans'" font-size="8">Precio de posición + fee de retiro del exchange (0.001–0.02 SOL típico)</text>
-<text x="635" y="210" text-anchor="middle" fill="#6d5f9a" font-family="'DM Sans'" font-size="8">Ej: posición 0.2 SOL → enviar ≥ 0.21 SOL para cubrir fees</text>
+<text x="635" y="197" text-anchor="middle" fill="#6d5f9a" font-family="'DM Sans'" font-size="8">Precio exacto + 0.005 SOL (fees de red Solana)</text>
+<text x="635" y="210" text-anchor="middle" fill="#6d5f9a" font-family="'DM Sans'" font-size="8">Cualquier excedente será devuelto automáticamente a tu dirección</text>
 
-<!-- Watcher Sweep -->
+<!-- Frontend Execution -->
 <rect x="130" y="220" width="230" height="52" rx="8" fill="#081918" stroke="#0c5445" stroke-width="1"/>
-<text x="245" y="241" text-anchor="middle" fill="#14b8a6" font-family="'Space Mono'" font-size="9" font-weight="700">⑥ Watcher — sweep (~15s)</text>
-<text x="245" y="258" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">detecta balance ≥ precio → sweepPositionVault</text>
-<text x="245" y="270" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">transfiere SOL → campaign · asigna posición</text>
+<text x="245" y="241" text-anchor="middle" fill="#14b8a6" font-family="'Space Mono'" font-size="9" font-weight="700">⑥ Frontend — Execution</text>
+<text x="245" y="258" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">detecta transaccion on-chain via getSignaturesForAddress</text>
+<text x="245" y="270" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">usa Burner Wallet para comprar · reembolsa excedente</text>
 
 <line x1="360" y1="246" x2="400" y2="246" stroke="#14b8a6" stroke-width="1.2" marker-end="url(#a4g)"/>
 
@@ -464,65 +463,51 @@ footer strong{color:var(--text2);font-weight:500}
 <line x1="600" y1="246" x2="640" y2="246" stroke="#14b8a6" stroke-width="1.2" marker-end="url(#a4g)"/>
 <rect x="640" y="220" width="80" height="52" rx="8" fill="#081918" stroke="#0c5445" stroke-width="1"/>
 <text x="680" y="243" text-anchor="middle" fill="#34d399" font-family="'Space Mono'" font-size="9" font-weight="700">✓ Done</text>
-<text x="680" y="258" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">~15–30s</text>
+<text x="680" y="258" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">Serverless</text>
 
 <!-- Also with wallet connected arrow -->
 <rect x="20" y="220" width="100" height="52" rx="7" fill="rgba(56,189,248,.06)" stroke="rgba(56,189,248,.2)" stroke-width="1"/>
 <text x="70" y="241" text-anchor="middle" fill="#38bdf8" font-family="'DM Sans'" font-size="8" font-weight="600">Con wallet</text>
-<text x="70" y="255" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">autoSweep</text>
+<text x="70" y="255" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">Firma Directa</text>
 <text x="70" y="268" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">inmediato</text>
 <line x1="120" y1="246" x2="128" y2="246" stroke="#38bdf8" stroke-width="1" marker-end="url(#a4)"/>
 </svg>
 </div>
 
 <div class="box teal">
-  <strong>Watcher — arranca automáticamente con <code>bash scripts/deploy.sh</code></strong> (DevNet) o <code>bash scripts/deploy-mainnet.sh</code> (Mainnet).<br/>
-  Para desarrollo sin re-deploy: <code>npm run dev:full</code> (Vite + watcher en paralelo).<br/><br/>
-  El <code>deploy.sh</code> espera hasta 15 s a que el endpoint <code>/health</code> responda antes de confirmar que el watcher está listo. Si el proceso falla, muestra las últimas líneas de <code>watcher.log</code> para diagnóstico.
+  <strong>Serverless Client-Side Architecture — $0 Infraestructura</strong><br/>
+  El sistema opera en Vercel/Netlify sin ningún backend o VPS (Virtual Private Server). Toda la monitorización (polling) y recuperación de estados se hace mediante el navegador leyendo la blockchain directamente a través del RPC configurado.
 </div>
 <div class="box green" style="margin-top:10px">
-  <strong>Fallback automático:</strong> Si el SOL del exchange llegó al vault antes de que el watcher lo inicializara, el contrato expone <code>recordExternalPayment</code> — asigna la posición sin vault. El pago queda registrado en blockchain en cualquier caso.
+  <strong>Rembolsos Automáticos y Seguros:</strong> Si el SOL llega, pero la posición ya fue tomada o se envió una cantidad mayor a la esperada, la misma Burner Wallet utiliza un `SystemProgram.transfer` inmediatamente para devolver el saldo sobrante al destinatario configurado.
 </div>
 
-<div class="box amber" style="margin-top:10px">
-  <strong>Sobre el monto a enviar:</strong> Los exchanges cobran un fee de retiro propio (generalmente 0.001–0.02 SOL) que se descuenta del saldo del usuario, no del monto enviado. Para garantizar que el vault reciba el precio completo, la UI muestra un <strong>monto recomendado = precio + buffer de 0.01 SOL</strong>. Cualquier exceso por encima del precio va al sweeper como tip.
-</div>
 </div>
 
-<!-- 07 WATCHER -->
+<!-- 07 ARQUITECTURA -->
 <div class="sec">
-<div class="sec-label">07 — Watcher automático</div>
-<h2>HTTP API + dos fases de polling</h2>
+<div class="sec-label">07 — Arquitectura Sin Servidor (Zero-Touch)</div>
+<h2>Totalmente Descentralizado</h2>
 
-<p>El watcher corre como proceso Node.js separado (<code>node scripts/watcher.mjs</code>) con su propio keypair Solana. <strong>El servidor HTTP arranca primero</strong> (antes de que Anchor inicialice) — el puerto 3001 siempre está disponible incluso durante la carga inicial.</p>
+<p>Eliminamos toda dependencia de procesos en background tipo <code>watcher</code>. Esto no solo <strong>elimina los costos mensuales de VPS</strong> sino que asegura que la aplicación puede escalar a miles de usuarios sin latencias introducidas por cuellos de botella centralizados.</p>
 
-<div class="box blue" style="margin-bottom:16px">
-  <strong>4 endpoints HTTP:</strong><br/>
-  <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">
-    <div><code>GET &nbsp;/health</code> — estado del servicio; responde siempre, incluso durante init. Muestra si Anchor está listo.</div>
-    <div><code>POST /watch-vault</code> — pre-crea el vault on-chain en cuanto el usuario ingresa su dirección Solana. Así el vault existe <em>antes</em> de que llegue el SOL.</div>
-    <div><code>POST /sweep-now</code> — asigna la posición CEX. El frontend lo llama automáticamente al detectar el pago, y el botón "🎯 Take My Position" sirve de fallback manual.</div>
-    <div><code>POST /refund-vault</code> — reembolsa un vault cuya posición ya fue tomada por otra persona. El frontend lo llama inmediatamente al detectar el conflicto; el poll loop también lo llama de forma proactiva.</div>
-  </div>
-</div>
-
-<table class="tbl">
-<thead><tr><th>Fase</th><th>Descripción</th><th>Frecuencia</th></tr></thead>
+<table class="tbl" style="margin-top:20px">
+<thead><tr><th>Fase</th><th>Descripción</th><th>Seguridad</th></tr></thead>
 <tbody>
 <tr>
-  <td>① Sweep</td>
-  <td>Escanea todos los <code>PositionVault</code> on-chain con balance ≥ precio → <code>sweepPositionVault</code> → posición asignada, vault cerrado. Si la TX falla con <code>PositionTaken</code>, activa auto-reembolso de emergencia.</td>
-  <td>Cada 15s</td>
+  <td>① Generación Local</td>
+  <td>El Burner Wallet se genera dentro del navegador a través de <code>@solana/web3.js</code> y se guarda temporalmente en LocalStorage para resistir refrescos de página.</td>
+  <td>Ephemeral. Sus llaves privadas solo duran lo que tarda la transacción.</td>
 </tr>
 <tr>
-  <td>① b. Reembolso</td>
-  <td><strong>Anti race-condition:</strong> Escanea todos los vaults activos. Si la posición del vault ya fue asignada a <em>otra dirección</em> (por un usuario wallet o un sweep anterior), llama <code>refundPositionVault</code> → todo el SOL regresa al <code>recipient</code> automáticamente.</td>
-  <td>Cada 15s</td>
+  <td>② Detección</td>
+  <td>Uso de <code>getSignaturesForAddress</code> y <code>getParsedTransaction</code> para validar que los montos recibidos son exactos, antes de despachar instrucciones on-chain.</td>
+  <td>On-chain Determinism. No depende del estado local del navegador.</td>
 </tr>
 <tr>
-  <td>② Settlement</td>
-  <td>Detecta campañas en estado Settled. Con ganador: <code>push_prize</code> → SOL al winner. Sin ganador: <code>route_no_winner_to_treasury</code> → SOL al proyecto.</td>
-  <td>Cada 15s</td>
+  <td>③ Ejecución</td>
+  <td>Una vez validado, se empaqueta la instrucción <code>buy_position</code> junto con un <code>transfer</code> de vuelta para el excedente.</td>
+  <td>Liquidación atómica donde el rembolso de comisiones fluye naturalmente de vuelta al usuario.</td>
 </tr>
 </tbody>
 </table>
@@ -532,32 +517,10 @@ footer strong{color:var(--text2);font-weight:500}
   <p style="font-size:.83rem;margin-top:8px;line-height:1.6">
     Si dos personas intentan comprar la misma posición al mismo tiempo:<br/>
     • <strong>Usuarios con wallet:</strong> el contrato Anchor rechaza la segunda transacción con <code>PositionTaken</code> <em>antes</em> de transferir SOL — el dinero nunca sale.<br/>
-    • <strong>Usuarios CEX/vault:</strong> cada uno tiene un vault PDA único. El segundo sweep falla con <code>PositionTaken</code>. El watcher detecta esto y llama <code>refundPositionVault</code> automáticamente — el SOL regresa al recipient (menos el fee de red ~0.000005 SOL). El frontend también solicita el reembolso de forma inmediata y muestra una pantalla informativa.
+    • <strong>Usuarios CEX (Burner):</strong> La transacción fallará y el frontend aplicará inmediatamente la función `executeRefund`, regresando todo el SOL a la wallet de origen del usuario.
   </p>
 </div>
 
-<div class="box green">
-  <strong>Fallback automático — <code>recordExternalPayment</code>:</strong> Si el SOL del exchange llegó al vault PDA antes de que el watcher lo inicializara, el watcher usa <code>recordExternalPayment</code>. Asigna la posición directamente sin necesitar el vault. El pago queda registrado en blockchain en cualquier caso.
-</div>
-
-<div class="box teal" style="margin-top:10px">
-  <strong>Premio CEX automático:</strong> Si la posición ganadora la compró un usuario CEX, el watcher detecta el estado Settled y llama <code>push_prize</code> automáticamente — SOL directo al <code>recipient</code>. Sin acción, sin wallet.
-</div>
-
-<div class="box purple" style="margin-top:10px">
-  <strong>💰 Modelo económico del sweeper — auto-sostenido:</strong><br/>
-  <div style="display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin-top:8px;font-size:.82rem">
-    <span style="color:var(--green);font-weight:700">+ Vault rent reclamado</span>
-    <span>~0.002 SOL por sweep (el contrato cierra el vault y devuelve el rent al sweeper)</span>
-    <span style="color:var(--green);font-weight:700">+ Tip del usuario</span>
-    <span>Exceso sobre el precio de posición (ej: usuario envía 0.21, precio 0.20 → 0.01 SOL al sweeper)</span>
-    <span style="color:var(--coral);font-weight:700">− Fee TX</span>
-    <span>~0.000005 SOL por transacción Solana</span>
-  </div>
-  <p style="font-size:.78rem;margin-top:10px;color:var(--text2)">
-    Con 0.05 SOL iniciales el sweeper puede ejecutar ~10,000 operaciones. El watcher expone un endpoint <code>GET /health</code> que muestra el accounting en tiempo real: sweeps exitosos, fees gastados, rent reclamado, tips acumulados y estimación de rentabilidad neta. El watcher pausa automáticamente si el balance baja de 0.005 SOL para no perder fees en reintentos.
-  </p>
-</div>
 </div>
 
 <!-- 08 PRIZE DELIVERY -->

@@ -74,15 +74,7 @@ export function getCampaignPDA(creator, projectIndex, campaignIndex) {
 }
 
 
-/** Vault PDA — one per (campaign × positionIndex × recipient) */
-export function getVaultPDA(campaignPDA, positionIndex, recipient) {
-  const camp = typeof campaignPDA === 'string' ? new PublicKey(campaignPDA) : campaignPDA;
-  const rec  = typeof recipient   === 'string' ? new PublicKey(recipient)   : recipient;
-  return PublicKey.findProgramAddressSync(
-    [Buffer.from('vault'), camp.toBuffer(), Buffer.from([positionIndex]), rec.toBuffer()],
-    PROGRAM_ID
-  );
-}
+
 
 // ─── Program instance ─────────────────────────────────────────────────────────
 export function getProgram(provider) {
@@ -207,10 +199,14 @@ export async function fundCampaignOnChain(provider, { campaignPDA }) {
 }
 
 /** Wallet user buys a specific position (0–99) */
-export async function buyPositionOnChain(provider, { campaignPDA, positionIndex }) {
+export async function buyPositionOnChain(provider, { campaignPDA, positionIndex, recipient, signers = [] }) {
   const program  = getProgram(provider);
   const buyer    = provider.wallet?.publicKey;
-  if (!buyer) throw new Error('Wallet not connected');
+  if (!buyer && signers.length === 0) throw new Error('Wallet not connected');
+
+  // If buyer isn't connected but we have signers, assume the first signer is the buyer (e.g. Burner Wallet)
+  const buyerPubkey = buyer || signers[0].publicKey;
+  const recPub = recipient ? new PublicKey(recipient) : buyerPubkey;
 
   const campaign = await program.account.campaignAccount.fetch(new PublicKey(campaignPDA));
   const [projectPDA] = getProjectPDA(
@@ -223,38 +219,19 @@ export async function buyPositionOnChain(provider, { campaignPDA, positionIndex 
     .accounts({
       campaign:       new PublicKey(campaignPDA),
       project:        projectPDA,
-      buyer,
+      buyer:          buyerPubkey,
+      recipient:      recPub,
       projectCreator: new PublicKey(campaign.creator),
       systemProgram:  SystemProgram.programId,
     })
+    .signers(signers)
     .rpc({ commitment: 'confirmed' });
 
   const updated = await program.account.campaignAccount.fetch(new PublicKey(campaignPDA));
   return { tx, account: updated };
 }
 
-/** Creator records a CEX payment on-chain */
-export async function recordExternalPaymentOnChain(provider, { campaignPDA, positionIndex, payer }) {
-  const program    = getProgram(provider);
-  const authority  = provider.wallet.publicKey;
-  const campaign   = await program.account.campaignAccount.fetch(new PublicKey(campaignPDA));
-  const [projectPDA] = getProjectPDA(
-    new PublicKey(campaign.creator),
-    campaign.projectIndex.toNumber()
-  );
 
-  const tx = await program.methods
-    .recordExternalPayment(positionIndex, new PublicKey(payer))
-    .accounts({
-      campaign:  new PublicKey(campaignPDA),
-      project:   projectPDA,
-      authority,
-    })
-    .rpc({ commitment: 'confirmed' });
-
-  const updated = await program.account.campaignAccount.fetch(new PublicKey(campaignPDA));
-  return { tx, account: updated };
-}
 
 /** Resolve campaign (slot hash randomness). Anyone can call after deadline. */
 export async function resolveCampaignOnChain(provider, { campaignPDA }) {
@@ -347,78 +324,7 @@ export async function withdrawTreasuryOnChain(provider, { projectIndex, amountLa
 }
 
 
-/** Create a position vault PDA for a CEX/exchange user.
- *  Anyone (payer) can pay the rent. Returns the vault PDA address. */
-export async function createPositionVaultOnChain(provider, { campaignPDA, positionIndex, recipient, payer }) {
-  const program = getProgram(provider);
-  const campPub = new PublicKey(campaignPDA);
-  const recPub  = new PublicKey(recipient);
-  const payPub  = (payer && new PublicKey(payer)) || provider.wallet.publicKey;
 
-  const [vaultPDA] = getVaultPDA(campPub, positionIndex, recPub);
-
-  const tx = await program.methods
-    .createPositionVault(positionIndex)
-    .accounts({
-      campaign:      campPub,
-      positionVault: vaultPDA,
-      recipient:     recPub,
-      payer:         payPub,
-      systemProgram: SystemProgram.programId,
-    })
-    .rpc({ commitment: 'confirmed' });
-
-  return { tx, vaultPDA: vaultPDA.toBase58() };
-}
-
-/** Sweep a funded vault into the campaign (assigns position on-chain).
- *  Closes vault — remaining rent goes to sweeper/caller. */
-export async function sweepPositionVaultOnChain(provider, { campaignPDA, positionIndex, recipient }) {
-  const program  = getProgram(provider);
-  const campPub  = new PublicKey(campaignPDA);
-  const recPub   = new PublicKey(recipient);
-  const sweeper  = provider.wallet.publicKey;
-
-  const [vaultPDA] = getVaultPDA(campPub, positionIndex, recPub);
-
-  const tx = await program.methods
-    .sweepPositionVault(positionIndex)
-    .accounts({
-      campaign:      campPub,
-      positionVault: vaultPDA,
-      recipient:     recPub,
-      sweeper,
-      systemProgram: SystemProgram.programId,
-    })
-    .rpc({ commitment: 'confirmed' });
-
-  const account = await program.account.campaignAccount.fetch(campPub);
-  return { tx, account };
-}
-
-/** Refund a vault — returns all SOL to the recipient.
- *  Anyone can trigger (watcher, creator, recipient). */
-export async function refundPositionVaultOnChain(provider, { campaignPDA, positionIndex, recipient }) {
-  const program   = getProgram(provider);
-  const campPub   = new PublicKey(campaignPDA);
-  const recPub    = new PublicKey(recipient);
-  const initiator = provider.wallet.publicKey;
-
-  const [vaultPDA] = getVaultPDA(campPub, positionIndex, recPub);
-
-  const tx = await program.methods
-    .refundPositionVault(positionIndex)
-    .accounts({
-      campaign:      campPub,
-      positionVault: vaultPDA,
-      recipient:     recPub,
-      initiator,
-      systemProgram: SystemProgram.programId,
-    })
-    .rpc({ commitment: 'confirmed' });
-
-  return { tx };
-}
 
 // ─── Read helpers ─────────────────────────────────────────────────────────────
 

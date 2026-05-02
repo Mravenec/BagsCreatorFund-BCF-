@@ -8,8 +8,8 @@ import {
   resolveCampaignOnChain, claimPrizeOnChain, routeToTreasuryOnChain,
   campaignAccountToDisplay, getProgram, fetchProject,
   fmtPos, posStatus, totalPot, timeLeft, isExpired,
-  getVaultPDA, createPositionVaultOnChain, sweepPositionVaultOnChain,
 } from "../lib/programClient.js";
+import { Keypair } from "@solana/web3.js";
 import { AnchorProvider } from "@coral-xyz/anchor";
 import { toUSDC, TOKENS_PER_SOL, TREASURY_FEE_PCT, BCF_PROGRAM_ID, WATCHER_URL, CEX_FEE_BUFFER_SOL, IS_MAINNET, NETWORK } from "../lib/constants.js";
 import { shortAddr, explorerTx, getSOLBalance, requestAirdrop } from "../lib/solana.js";
@@ -308,7 +308,7 @@ function ParticipateModal({ campaign, positionIndex, connection, onClose, onSucc
     const provider = new AnchorProvider(connection, anchorWallet, { commitment: "confirmed" });
     const freshAccount = await fetchCampaign(provider, campaign.pda);
     if (!freshAccount || freshAccount.positions[positionIndex].filled) {
-      toast(`⚠️ La posición #${positionIndex < 10 ? '0' + positionIndex : positionIndex} acaba de ser tomada por alguien más. No se realizó ningún cobro. Elige otra posición.`, "error");
+      toast(`⚠️ Position #${positionIndex < 10 ? '0' + positionIndex : positionIndex} was just taken by someone else. No charge was made. Choose another position.`, "error");
       onClose(); return;
     }
 
@@ -329,7 +329,7 @@ function ParticipateModal({ campaign, positionIndex, connection, onClose, onSucc
     } catch(e) {
       const m = e.message||"";
       if (/rejected|cancelled|canceled/i.test(m)) toast("Cancelado", "info");
-      else if (m.includes('PositionTaken')) toast(`⚠️ La posición #${fmtPos(positionIndex)} acaba de ser tomada por otra persona. Tu transacción fue rechazada y no se realizó ningún cobro. Elige otra posición.`, "error");
+      else if (m.includes('PositionTaken')) toast(`⚠️ Position #${fmtPos(positionIndex)} was just taken by someone else. Your transaction was rejected and no charge was made. Choose another position.`, "error");
       else toast("Failed: " + m.slice(0,100), "error");
     } finally { setSending(false); }
   }
@@ -399,13 +399,12 @@ function ParticipateModal({ campaign, positionIndex, connection, onClose, onSucc
                 {connected && wallet && <p style={{ textAlign:"center", fontSize:".7rem", color:"var(--text3)" }}>{wallet.adapter.name} · Solana {IS_MAINNET?"Mainnet":"DevNet"}</p>}
               </div>
             ) : (
-              <VaultCEXTab
+              <BurnerCEXTab
                 campaign={campaign}
                 positionIndex={positionIndex}
                 price={price}
                 lamports={lamports}
                 connection={connection}
-                anchorWallet={anchorWallet}
                 toast={toast}
                 copied={copied}
                 copy={copy}
@@ -420,48 +419,63 @@ function ParticipateModal({ campaign, positionIndex, connection, onClose, onSucc
   );
 }
 
-
-function VaultCEXTab({ campaign, positionIndex, price, lamports, connection,
-                       anchorWallet, toast, copied, copy, onSuccess, onClose }) {
+function BurnerCEXTab({ campaign, positionIndex, price, lamports, connection, toast, copied, copy, onSuccess, onClose }) {
   const [recipientAddr, setRecipientAddr]   = useState('');
   const [addrError,     setAddrError]       = useState('');
-  const [vaultPDA,      setVaultPDA]        = useState(null);
+  const [burnerKeypair, setBurnerKeypair]   = useState(null);
   const [vaultBalance,  setVaultBalance]    = useState(0);
-  const [creating,      setCreating]        = useState(false);
   const [sweeping,      setSweeping]        = useState(false);
   const [swept,         setSwept]           = useState(false);
   const [polling,       setPolling]         = useState(false);
   const [isChecking,    setIsChecking]      = useState(false);
   const [lastChecked,   setLastChecked]     = useState(null);
-  const [autoStatus,    setAutoStatus]      = useState('');   // describes what auto-action is happening
-  const [refundPending, setRefundPending]   = useState(false); // true when position taken by another & refund initiated
+  const [autoStatus,    setAutoStatus]      = useState('');
+  const [refundPending, setRefundPending]   = useState(false);
 
-  // Refs: prevent stale-closure bugs in setInterval/async callbacks
-  const sweepingRef  = useRef(false); // true while sweep TX is in-flight
-  const sweptRef     = useRef(false); // true once position secured (never reset)
-  const recipientRef = useRef('');    // always-current copy of recipientAddr
+  const sweepingRef  = useRef(false);
+  const sweptRef     = useRef(false);
+  const recipientRef = useRef('');
 
-  // Poll every 8s while polling=true
+  // Generate or load Burner Wallet
   useEffect(() => {
-    if (!polling || !vaultPDA || swept) return;
-    const interval = setInterval(checkStatus, 8000);
-    return () => clearInterval(interval);
-  }, [polling, vaultPDA, swept, recipientAddr]); // eslint-disable-line
+    if (!recipientAddr) return;
+    const key = `bcf_burner_${campaign.pda}_${positionIndex}`;
+    let kp;
+    try {
+      const stored = localStorage.getItem(key);
+      if (stored) {
+        kp = Keypair.fromSecretKey(new Uint8Array(JSON.parse(stored)));
+      } else {
+        kp = Keypair.generate();
+        localStorage.setItem(key, JSON.stringify(Array.from(kp.secretKey)));
+      }
+      setBurnerKeypair(kp);
+      setPolling(true);
+    } catch (e) {
+      console.error('Burner wallet error:', e);
+    }
+  }, [recipientAddr, campaign.pda, positionIndex]);
 
-  // Defensive check — MUST be after all hooks
+  // Cleanup Burner Wallet on success
+  useEffect(() => {
+    if (swept || refundPending) {
+      const key = `bcf_burner_${campaign.pda}_${positionIndex}`;
+      localStorage.removeItem(key);
+    }
+  }, [swept, refundPending, campaign.pda, positionIndex]);
+
+  // Poll every 5s while polling=true
+  useEffect(() => {
+    if (!polling || !burnerKeypair || swept) return;
+    const interval = setInterval(checkStatus, 5000);
+    return () => clearInterval(interval);
+  }, [polling, burnerKeypair, swept, recipientAddr]); // eslint-disable-line
+
   if (!campaign || positionIndex === undefined) return null;
 
-
-
-  // Derive vault PDA when user enters address.
-  // If no wallet → auto-calls /watch-vault to pre-create the vault on-chain.
-  // This ensures the vault exists before the user sends SOL, so sweepPositionVault
-  // works correctly. If the watcher is down, /sweep-now still handles it via
-  // createPositionVault or recordExternalPayment fallback.
   function handleAddrChange(v) {
     setRecipientAddr(v);
     recipientRef.current = v;
-    setVaultPDA(null);
     setPolling(false);
     setVaultBalance(0);
     setSwept(false);
@@ -469,382 +483,153 @@ function VaultCEXTab({ campaign, positionIndex, price, lamports, connection,
     sweptRef.current    = false;
     setAutoStatus('');
     setAddrError('');
-    if (!v.trim()) return;
-    try {
-      const [pda] = getVaultPDA(campaign.pda, positionIndex, v.trim());
-      const pdaStr = pda.toBase58();
-      setVaultPDA(pdaStr);
-      setPolling(true);
-
-      // Pre-crear vault via watcher si no hay wallet conectada
-      if (!anchorWallet) {
-        setAutoStatus('Reservando vault address…');
-        fetch(`${WATCHER_URL}/watch-vault`, {
-          method:  'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body:    JSON.stringify({ campaign: campaign.pda, positionIndex, recipient: v.trim() }),
-          signal:  AbortSignal.timeout(15000),
-        })
-          .then(r => r.json().catch(() => ({})))
-          .then(json => {
-            if (json.ok) {
-              console.log('[BCF-CEX] Vault pre-creado on-chain ✅');
-            } else {
-              console.warn('[BCF-CEX] /watch-vault:', json.error || 'sin respuesta ok');
-            }
-            setAutoStatus('');
-          })
-          .catch(e => {
-            // Watcher no disponible: el vault se creará en /sweep-now si es necesario
-            console.warn('[BCF-CEX] /watch-vault no alcanzable:', e.message);
-            setAutoStatus('');
-          });
-      }
-    } catch {
-      setAddrError('Invalid Solana address');
+    if (v.trim()) {
+      try { new PublicKey(v.trim()); } catch { setAddrError('Invalid Solana address'); }
     }
   }
 
-  // Auto-sweep helper: initialise vault if needed, then sweep
-  const autoSweep = async (vPub, isProgramOwned) => {
-    if (!anchorWallet) return;
-    if (sweepingRef.current || sweptRef.current) return;
-    sweepingRef.current = true;
-    setSweeping(true);
-    try {
-      const provider = new AnchorProvider(connection, anchorWallet, { commitment: 'confirmed' });
-
-      // Step A: create vault on-chain if SOL arrived before vault was initialised
-      if (!isProgramOwned) {
-        setAutoStatus('Initialising vault...');
-        console.log('[BCF-CEX] Vault not yet program-owned — creating vault account');
-        try {
-          await createPositionVaultOnChain(provider, {
-            campaignPDA:   campaign.pda,
-            positionIndex,
-            recipient:     recipientAddr,
-          });
-          console.log('[BCF-CEX] Vault account created');
-        } catch (ce) {
-          const cm = ce.message || '';
-          // "already in use" means vault was just created between our check and now — fine
-          if (!cm.includes('already in use') && !cm.includes('custom program error: 0x0')) throw ce;
-          console.log('[BCF-CEX] Vault already exists, continuing...');
-        }
-      }
-
-      // Step B: sweep — moves SOL from vault → campaign, assigns position, closes vault
-      setAutoStatus('Assigning position on-chain...');
-      console.log('[BCF-CEX] Sweeping vault → campaign');
-      const { account } = await sweepPositionVaultOnChain(provider, {
-        campaignPDA:   campaign.pda,
-        positionIndex,
-        recipient:     recipientAddr,
-      });
-
-      sweptRef.current = true;
-      setSwept(true);
-      setAutoStatus('');
-      const posStr = String(positionIndex).padStart(2, '0');
-      saveCEXPosition(campaign.pda, positionIndex, recipientAddr, {
-        title: campaign.title, tokenSymbol: campaign.tokenSymbol,
-        positionPriceSOL: campaign.positionPriceSOL,
-      });
-      toast(`✅ Position #${posStr} confirmed on-chain!`, 'success');
-      onSuccess(campaignAccountToDisplay(campaign.pda, account));
-      setTimeout(onClose, 2500);
-    } catch (e) {
-      setAutoStatus('');
-      const m = e.message || '';
-      if (m.includes('PositionTaken')) {
-        setRefundPending(true);
-        toast('⚠️ Esta posición fue tomada por alguien más. Tu pago será reembolsado automáticamente (menos el fee de red) en los próximos minutos.', 'error');
-        // Solicitar reembolso al watcher de inmediato
-        const recipient = recipientRef.current || recipientAddr;
-        fetch(`${WATCHER_URL}/refund-vault`, {
-          method:  'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body:    JSON.stringify({ campaign: campaign.pda, positionIndex, recipient }),
-          signal:  AbortSignal.timeout(35000),
-        }).catch(() => {}); // el watcher igual lo detecta en el poll loop
-      } else if (m.includes('InsufficientFunds')) {
-        toast('Vault balance still below required amount', 'error');
-      } else if (!m.includes('rejected')) {
-        toast('Auto-sweep failed: ' + m.slice(0, 80), 'error');
-        console.error('[BCF-CEX] Auto-sweep error:', e);
-      }
-    } finally {
-      sweepingRef.current = false;
-      setSweeping(false);
-    }
-  };
-
-  // ── callWatcherSweep: signs via watcher keypair — no wallet needed ──────────
-  // Frontend calls WATCHER_URL/sweep-now. In dev, Vite proxies /watcher/* to
-  // 127.0.0.1:3001 (watcher process). This eliminates all CORS/IPv6/WSL2 issues.
-  // Source of truth: on-chain position.owner — never localStorage.
-  async function callWatcherSweep() {
-    if (sweepingRef.current || sweptRef.current) return;
-    sweepingRef.current = true;
-    setSweeping(true);
-    setAutoStatus('Assigning position on-chain…');
-    const recipient = recipientRef.current || recipientAddr;
-    
-    let fetchSuccess = false;
-    let json = {};
-    let resp;
-
-    try {
-      resp = await fetch(`${WATCHER_URL}/sweep-now`, {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ campaign: campaign.pda, positionIndex, recipient }),
-        signal:  AbortSignal.timeout(35000),
-      });
-      json = await resp.json().catch(() => ({}));
-      fetchSuccess = true;
-    } catch(e) {
-      setAutoStatus('');
-      if (e.name === 'AbortError' || e.name === 'TimeoutError') {
-        toast('Tiempo de espera agotado. El watcher puede estar procesando una TX. Intenta de nuevo.', 'error');
-      } else {
-        toast('No se pudo contactar al watcher. Inicia con: bash scripts/deploy.sh', 'error');
-        console.warn('[BCF-CEX] Watcher inalcanzable:', e.message);
-      }
-      sweepingRef.current = false;
-      setSweeping(false);
-      return;
-    }
-
-    if (fetchSuccess) {
-      if (resp.ok && json.ok) {
-        // TX confirmed by watcher — verify on-chain
-        try {
-          const mockWallet = { publicKey: new PublicKey('11111111111111111111111111111111') };
-          const prov    = new AnchorProvider(connection, mockWallet, { commitment: 'confirmed' });
-          const account = await fetchCampaign(prov, campaign.pda);
-          const posOwner = account?.positions?.[positionIndex]?.owner?.toBase58?.();
-          
-          if (posOwner && posOwner !== '11111111111111111111111111111111') {
-            sweptRef.current = true;
-            setSwept(true);
-            setAutoStatus('');
-            // localStorage hint only
-            saveCEXPosition(campaign.pda, positionIndex, recipient, {
-              title: campaign.title, tokenSymbol: campaign.tokenSymbol,
-              positionPriceSOL: campaign.positionPriceSOL,
-            });
-            toast(`✅ Position #${String(positionIndex).padStart(2,'0')} secured on-chain!`, 'success');
-            if (account) onSuccess(campaignAccountToDisplay(campaign.pda, account));
-            setTimeout(onClose, 2500);
-          } else {
-            setAutoStatus('');
-            console.warn('[BCF-CEX] TX sent but on-chain not yet confirmed — polling will catch it');
-            toast('Transacción enviada, esperando confirmación...', 'info');
-          }
-        } catch (chainErr) {
-          setAutoStatus('');
-          console.warn('[BCF-CEX] TX sent but fetchCampaign failed:', chainErr.message);
-          toast('Posición asignada, esperando sincronización de red...', 'info');
-        }
-      } else {
-        setAutoStatus('');
-        const errMsg = json.error || '';
-        console.warn('[BCF-CEX] /sweep-now:', resp.status, errMsg);
-        // WATCHER_DOWN = proxy 503 (watcher not running)
-        if (errMsg === 'WATCHER_DOWN' || resp.status === 503 || resp.status === 502) {
-          toast('El watcher no está corriendo. Usa bash scripts/deploy.sh para iniciar todo.', 'error');
-        } else if (errMsg.includes('insuficientes') || errMsg.includes('underfunded') || errMsg.includes('Insufficient')) {
-          toast('El vault aún no tiene fondos suficientes. Espera un momento y vuelve a intentarlo.', 'error');
-        } else if (errMsg.includes('PositionTaken') || errMsg.includes('ya asignada')) {
-          setRefundPending(true);
-          toast('⚠️ Esa posición fue tomada por alguien más mientras procesabas el pago. Tu dinero será reembolsado automáticamente (menos el fee de red). Lo sentimos mucho.', 'error');
-          // Intentar reembolso explícito vía watcher
-          const refundRecipient = recipientRef.current || recipientAddr;
-          fetch(`${WATCHER_URL}/refund-vault`, {
-            method:  'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body:    JSON.stringify({ campaign: campaign.pda, positionIndex, recipient: refundRecipient }),
-            signal:  AbortSignal.timeout(35000),
-          }).then(r => r.json().catch(() => ({}))).then(j => {
-            if (j.ok && j.tx) console.log(`[BCF-CEX] Reembolso confirmado: ${j.tx.slice(0,16)}…`);
-          }).catch(() => {});
-        } else {
-          toast('Error del watcher: ' + (errMsg || `HTTP ${resp.status}`).slice(0, 100), 'error');
-        }
-      }
-      sweepingRef.current = false;
-      setSweeping(false);
-    }
-  }
-
-  // Full status check: reads balance, detects funds, triggers autoSweep automatically
   const checkStatus = async () => {
-    if (!vaultPDA || sweptRef.current) return; // use ref not state
+    if (!burnerKeypair || sweptRef.current || sweepingRef.current) return;
     setIsChecking(true);
     try {
-      console.log(`[BCF-CEX] Checking status for pos#${positionIndex} at ${vaultPDA}`);
+      const bPub = burnerKeypair.publicKey;
+      
+      // 1. Transaction Scanning (Deterministic check)
+      const sigs = await connection.getSignaturesForAddress(bPub, { limit: 5 });
+      let validDeposit = false;
+      let totalReceived = 0;
+      
+      for (const sig of sigs) {
+        const tx = await connection.getParsedTransaction(sig.signature, { commitment: "confirmed", maxSupportedTransactionVersion: 0 });
+        if (!tx || tx.meta?.err) continue;
+        for (const ix of tx.transaction.message.instructions) {
+          if (ix.parsed?.type === "transfer" && ix.parsed?.info?.destination === bPub.toBase58()) {
+             totalReceived += ix.parsed.info.lamports;
+          }
+        }
+      }
+      
+      setVaultBalance(totalReceived);
+      
+      // We need at least the price + ~0.002 SOL for rent and fees
+      const requiredLamports = lamports + 2000000;
 
-      // 1. Balance check
-      const vPub = new PublicKey(vaultPDA);
-      const bal  = await connection.getBalance(vPub);
-      setVaultBalance(bal);
-      console.log(`[BCF-CEX] Balance: ${(bal / 1e9).toFixed(4)} SOL (need: ${price} SOL)`);
+      if (totalReceived >= requiredLamports) {
+        validDeposit = true;
+      }
 
-      // 2. Account ownership check
-      const accInfo       = await connection.getAccountInfo(vPub);
-      const isProgramOwned = accInfo && accInfo.owner.toBase58() === BCF_PROGRAM_ID;
-      console.log(`[BCF-CEX] Vault exists: ${!!accInfo}, Program-owned: ${isProgramOwned}`);
-
-      // 3. Check if position already filled (watcher may have completed it)
-      const mockWallet = { publicKey: new PublicKey('11111111111111111111111111111111') };
+      // Check if position already filled on-chain
+      const mockWallet = { publicKey: bPub };
       const provider   = new AnchorProvider(connection, mockWallet, { commitment: 'confirmed' });
       const account    = await fetchCampaign(provider, campaign.pda);
       const currentOwner = account?.positions[positionIndex]?.owner?.toBase58();
-      console.log(`[BCF-CEX] Position owner on-chain: ${currentOwner || 'none'}`);
 
-      if (currentOwner && currentOwner !== '11111111111111111111111111111111' &&
-          currentOwner === recipientAddr) {
-        console.log('[BCF-CEX] Position already secured!');
-        sweptRef.current = true;
-        setSwept(true);
-        onSuccess(campaignAccountToDisplay(campaign.pda, account));
-        toast(`✅ Position #${String(positionIndex).padStart(2,'0')} secured!`, 'success');
-        setTimeout(onClose, 2000);
-        return;
-      }
-
-      // 3b. Position taken by SOMEONE ELSE while we had funds in vault → trigger refund
-      if (currentOwner && currentOwner !== '11111111111111111111111111111111' &&
-          currentOwner !== recipientAddr && bal > 0) {
-        console.warn('[BCF-CEX] Position taken by another address — requesting auto-refund');
-        setRefundPending(true);
-        setPolling(false); // stop polling
-        toast('⚠️ Esta posición fue tomada por otra persona. Tu pago será reembolsado automáticamente.', 'error');
-        // Trigger watcher refund
-        const refundRecipient = recipientRef.current || recipientAddr;
-        fetch(`${WATCHER_URL}/refund-vault`, {
-          method:  'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body:    JSON.stringify({ campaign: campaign.pda, positionIndex, recipient: refundRecipient }),
-          signal:  AbortSignal.timeout(35000),
-        }).then(r => r.json().catch(() => ({}))).then(j => {
-          if (j.ok && j.tx) {
-            console.log(`[BCF-CEX] Reembolso confirmado: ${j.tx.slice(0,16)}…`);
-            toast('✅ Reembolso confirmado on-chain. El SOL regresará a tu dirección en breve.', 'success');
-          }
-        }).catch(() => {});
-        return;
-      }
-
-      // 4. Funds present but position not yet assigned → trigger auto-sweep
-      if (bal >= lamports && !swept) {
-        if (anchorWallet) {
-          console.log('[BCF-CEX] Funds detected — triggering auto-sweep');
-          setAutoStatus('Payment detected — assigning position...');
-          // Don't await here so setIsChecking(false) fires; autoSweep manages its own state
-          autoSweep(vPub, isProgramOwned);
-        } else {
-          // No wallet: auto-call watcher sweep immediately
-          console.log('[BCF-CEX] Funds detected — calling watcher /sweep-now automatically');
-          setAutoStatus('Payment detected — assigning via watcher…');
-          callWatcherSweep(); // guarded by sweepingRef — safe to call from interval
+      if (currentOwner && currentOwner !== '11111111111111111111111111111111') {
+        if (currentOwner === recipientAddr) {
+          sweptRef.current = true;
+          setSwept(true);
+          onSuccess(campaignAccountToDisplay(campaign.pda, account));
+          toast(`✅ Position #${String(positionIndex).padStart(2,'0')} secured!`, 'success');
+          setTimeout(onClose, 2000);
+          return;
+        } else if (totalReceived > 0) {
+          // Position taken by someone else -> Refund
+          await executeRefund(provider, bPub, totalReceived);
+          return;
         }
       }
+
+      if (validDeposit && !sweptRef.current) {
+        await executePurchase(provider, bPub);
+      }
+
     } catch (e) {
-      console.error('[BCF-CEX] Status check failed:', e);
+      if (sweptRef.current) return; // Silenciar falsos positivos post-éxito
+      const msg = e?.message || (Object.keys(e || {}).length === 0 ? "Network/RPC timeout" : e?.toString());
+      console.error('[BCF-CEX] Status check failed:', msg, e);
     } finally {
       setIsChecking(false);
       setLastChecked(Date.now());
     }
   };
 
+  const executePurchase = async (provider, bPub) => {
+    sweepingRef.current = true;
+    setSweeping(true);
+    setAutoStatus('Assigning position on-chain...');
+    try {
+      // Mock wallet provider with Burner Keypair signing
+      const signTransaction = async (tx) => { tx.sign(burnerKeypair); return tx; };
+      const signAllTransactions = async (txs) => { txs.forEach(tx => tx.sign(burnerKeypair)); return txs; };
+      provider.wallet = { publicKey: bPub, signTransaction, signAllTransactions };
+
+      const { account } = await buyPositionOnChain(provider, {
+        campaignPDA: campaign.pda,
+        positionIndex,
+        recipient: recipientAddr,
+        signers: [burnerKeypair]
+      });
+
+      // Refund remaining balance
+      try {
+        const bal = await connection.getBalance(bPub);
+        if (bal > 5000) {
+           const refundTx = new Transaction().add(SystemProgram.transfer({ fromPubkey: bPub, toPubkey: new PublicKey(recipientAddr), lamports: bal - 5000 }));
+           refundTx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
+           refundTx.feePayer = bPub;
+           refundTx.sign(burnerKeypair);
+           await connection.sendRawTransaction(refundTx.serialize());
+        }
+      } catch (e) { console.warn("Change refund failed", e); }
+
+      sweptRef.current = true;
+      setSwept(true);
+      setAutoStatus('');
+      saveCEXPosition(campaign.pda, positionIndex, recipientAddr, { title: campaign.title, tokenSymbol: campaign.tokenSymbol, positionPriceSOL: campaign.positionPriceSOL });
+      toast(`✅ Position #${String(positionIndex).padStart(2,'0')} secured on-chain!`, 'success');
+      onSuccess(campaignAccountToDisplay(campaign.pda, account));
+      setTimeout(onClose, 2500);
+    } catch (e) {
+      setAutoStatus('');
+      const m = e.message || '';
+      if (m.includes('PositionTaken')) {
+        await executeRefund(provider, bPub, await connection.getBalance(bPub));
+      } else {
+        toast('Auto-sweep failed: ' + m.slice(0, 80), 'error');
+      }
+    } finally {
+      sweepingRef.current = false;
+      setSweeping(false);
+    }
+  };
+
+  const executeRefund = async (provider, bPub, bal) => {
+    if (bal <= 5000) return;
+    setRefundPending(true);
+    setPolling(false);
+    toast('⚠️ Position taken by another user. Refunding your payment...', 'error');
+    try {
+      const refundTx = new Transaction().add(SystemProgram.transfer({ fromPubkey: bPub, toPubkey: new PublicKey(recipientAddr), lamports: bal - 5000 }));
+      refundTx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
+      refundTx.feePayer = bPub;
+      refundTx.sign(burnerKeypair);
+      await connection.sendRawTransaction(refundTx.serialize());
+      toast('✅ Refund complete. SOL returned to your address.', 'success');
+    } catch (e) {
+      console.error("Refund failed", e);
+    }
+  };
 
   async function handleManualCheck() {
-    if (!vaultPDA) return;
+    if (!burnerKeypair) return;
     toast("Checking payment status...", "info");
     await checkStatus();
   }
 
-
-  const vaultReady = vaultBalance >= lamports && vaultPDA;
-
-  // Determine current step (1-4) for UI progress
-  const currentStep = swept ? 4 : vaultReady ? 3 : vaultPDA ? 2 : 1;
-  const fmtPos = (i) => String(i).padStart(2, '0');
-
-
-  async function handleCreateVault() {
-    if (!anchorWallet) {
-      toast('Automatic vault initialization is handled by the platform. Just send SOL!', 'info');
-      return;
-    }
-    if (!vaultPDA)     { toast('Enter a valid recipient address first', 'error'); return; }
-    setCreating(true);
-    try {
-      const provider = new AnchorProvider(connection, anchorWallet, { commitment: 'confirmed' });
-      await createPositionVaultOnChain(provider, {
-        campaignPDA:   campaign.pda,
-        positionIndex,
-        recipient:     recipientAddr,
-      });
-      toast('Vault created! Now send exactly ' + price + ' SOL to the address below', 'success');
-      setPolling(true);
-    } catch(e) {
-      const m = e.message || '';
-      if (m.includes('PositionTaken'))     toast('Position already taken', 'error');
-      else if (m.includes('already in use')) {
-        toast('Vault already exists — proceed to payment', 'info');
-        setPolling(true);
-      }
-      else if (m.includes('rejected'))     toast('Cancelled', 'info');
-      else                                 toast('Create vault failed: ' + m.slice(0,80), 'error');
-    } finally { setCreating(false); }
-  }
-
-
-  async function handleSweep() {
-    if (sweepingRef.current || sweptRef.current) return;
-    if (!anchorWallet) {
-      toast('The watcher service will confirm this automatically. No action needed!', 'info');
-      return;
-    }
-    sweepingRef.current = true;
-    setSweeping(true);
-    try {
-      const provider = new AnchorProvider(connection, anchorWallet, { commitment: 'confirmed' });
-      const { account } = await sweepPositionVaultOnChain(provider, {
-        campaignPDA:   campaign.pda,
-        positionIndex,
-        recipient:     recipientAddr,
-      });
-      setSwept(true);
-      sweptRef.current = true;
-      saveCEXPosition(campaign.pda, positionIndex, recipientAddr, {
-        title: campaign.title, tokenSymbol: campaign.tokenSymbol,
-        positionPriceSOL: campaign.positionPriceSOL,
-      });
-      toast('Position #' + String(positionIndex).padStart(2,'0') + ' confirmed on-chain!', 'success');
-      onSuccess(campaignAccountToDisplay(campaign.pda, account));
-      setTimeout(onClose, 2000);
-    } catch(e) {
-      const m = e.message || '';
-      if (m.includes('InsufficientFunds')) toast('Vault balance still too low — wait for funds', 'error');
-      else if (m.includes('PositionTaken')) {
-        setRefundPending(true);
-        toast('⚠️ Posición tomada por alguien más. Tu pago será reembolsado automáticamente. Lo sentimos.', 'error');
-        const refundRecipient = recipientRef.current || recipientAddr;
-        fetch(`${WATCHER_URL}/refund-vault`, {
-          method:  'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body:    JSON.stringify({ campaign: campaign.pda, positionIndex, recipient: refundRecipient }),
-          signal:  AbortSignal.timeout(35000),
-        }).catch(() => {});
-      }
-      else                                  toast('Sweep failed: ' + m.slice(0,80), 'error');
-    } finally { sweepingRef.current = false; setSweeping(false); }
-  }
-
+  const requiredSOL = (price + 0.002).toFixed(4); // Extra for fees
+  const vaultReady = vaultBalance >= (lamports + 2000000);
+  const currentStep = swept ? 4 : vaultReady ? 3 : burnerKeypair ? 2 : 1;
+  const vaultAddress = burnerKeypair?.publicKey.toBase58();
 
   if (refundPending) {
     return (
@@ -856,12 +641,6 @@ function VaultCEXTab({ campaign, positionIndex, price, lamports, connection,
             Someone else bought this position while processing your payment.<br/>
             <strong style={{ color:'var(--text)' }}>Your money is being automatically refunded.</strong>
           </p>
-        </div>
-        <div style={{ padding:'14px 16px', background:'rgba(251,191,36,.06)', border:'1px solid rgba(251,191,36,.22)', borderRadius:'var(--r)', fontSize:'.82rem', lineHeight:1.6, color:'var(--text2)' }}>
-          <div style={{ fontWeight:700, color:'var(--amber)', marginBottom:'6px' }}>ℹ️ What will happen?</div>
-          The system watcher will detect your vault with funds and execute an on-chain refund.<br/>
-          The SOL will return to <span style={{ fontFamily:'var(--mono)', color:'var(--text)', wordBreak:'break-all' }}>{recipientAddr.slice(0,8)}…{recipientAddr.slice(-6)}</span> within the next ~15 seconds.<br/>
-          <span style={{ fontSize:'.75rem', color:'var(--text3)', marginTop:'4px', display:'block' }}>Note: Network fee (~0.000005 SOL) is not refundable.</span>
         </div>
         <button className="btn btn-ghost btn-full" onClick={onClose} style={{ marginTop:'4px' }}>
           Close and choose another position
@@ -880,58 +659,34 @@ function VaultCEXTab({ campaign, positionIndex, price, lamports, connection,
             Confirmed on-chain. If this position wins, the prize is automatically sent to your address.
           </p>
         </div>
-        <div style={{ padding:'14px', background:'rgba(251,191,36,.06)', border:'1px solid rgba(251,191,36,.25)', borderRadius:'var(--r)' }}>
-          <div style={{ fontSize:'.7rem', color:'var(--amber)', fontWeight:700, marginBottom:'10px', textTransform:'uppercase', letterSpacing:'.06em' }}>
-            🏆 Prize delivery — save this info
-          </div>
-          {[
-            ['Campaign',      campaign.pda.slice(0,8)+'…'+campaign.pda.slice(-6)],
-            ['Your position', '#'+fmtPos(positionIndex)],
-            ['Prize address', recipientAddr],
-          ].map(([label, value]) => (
-            <div key={label} style={{ display:'flex', justifyContent:'space-between', gap:'8px', marginBottom:'6px' }}>
-              <span style={{ fontSize:'.73rem', color:'var(--text3)' }}>{label}</span>
-              <span style={{ fontSize:'.73rem', fontFamily:'var(--mono)', color:'var(--text)', wordBreak:'break-all', textAlign:'right' }}>{value}</span>
-            </div>
-          ))}
-          <p style={{ fontSize:'.68rem', color:'var(--text3)', marginTop:'10px', lineHeight:1.5 }}>
-            The watcher auto-sends the prize to your address — no wallet or action needed.
-          </p>
-        </div>
         <button className="btn btn-primary btn-full" onClick={() => window.location.reload()}>View Campaign</button>
       </div>
     );
   }
 
-
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:'16px' }}>
-      
-      {/* 1. Progress Steps Indicator */}
-      {!swept && (
-        <div style={{ display:'flex', justifyContent:'space-between', marginBottom:'8px', padding:'0 10px' }}>
-          {[1, 2, 3, 4].map(step => (
-            <div key={step} style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:'4px', opacity: currentStep >= step ? 1 : 0.3 }}>
-              <div style={{ 
-                width:'24px', height:'24px', borderRadius:'50%', background: currentStep > step ? 'var(--green)' : currentStep === step ? 'var(--accent)' : 'var(--bg3)',
-                color: currentStep >= step ? '#fff' : 'var(--text3)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'.7rem', fontWeight:700,
-                border: currentStep === step ? '2px solid rgba(56,189,248,.3)' : 'none', transition:'all .3s ease'
-              }}>
-                {currentStep > step ? '✓' : step}
-              </div>
-              <div style={{ fontSize:'.55rem', color:'var(--text3)', fontWeight:600, textTransform:'uppercase', letterSpacing:'0.5px' }}>
-                {step === 1 ? 'Address' : step === 2 ? 'Vault' : step === 3 ? 'Pay' : 'Secure'}
-              </div>
+      <div style={{ display:'flex', justifyContent:'space-between', marginBottom:'8px', padding:'0 10px' }}>
+        {[1, 2, 3].map(step => (
+          <div key={step} style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:'4px', opacity: currentStep >= step ? 1 : 0.3 }}>
+            <div style={{ 
+              width:'24px', height:'24px', borderRadius:'50%', background: currentStep > step ? 'var(--green)' : currentStep === step ? 'var(--accent)' : 'var(--bg3)',
+              color: currentStep >= step ? '#fff' : 'var(--text3)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'.7rem', fontWeight:700,
+              border: currentStep === step ? '2px solid rgba(56,189,248,.3)' : 'none', transition:'all .3s ease'
+            }}>
+              {currentStep > step ? '✓' : step}
             </div>
-          ))}
-        </div>
-      )}
-
-      <div style={{ padding:'10px 14px', background:'rgba(56,189,248,.06)', border:'1px solid rgba(56,189,248,.18)', borderRadius:'var(--r)', fontSize:'.78rem', color:'var(--accent)', lineHeight:1.55 }}>
-        <strong>No Wallet Needed:</strong> Each position has a unique vault address. Send SOL from any exchange — our watcher service handles the rest.
+            <div style={{ fontSize:'.55rem', color:'var(--text3)', fontWeight:600, textTransform:'uppercase', letterSpacing:'0.5px' }}>
+              {step === 1 ? 'Address' : step === 2 ? 'Pay' : 'Secure'}
+            </div>
+          </div>
+        ))}
       </div>
 
-      {/* Step 1: Address */}
+      <div style={{ padding:'10px 14px', background:'rgba(56,189,248,.06)', border:'1px solid rgba(56,189,248,.18)', borderRadius:'var(--r)', fontSize:'.78rem', color:'var(--accent)', lineHeight:1.55 }}>
+        <strong>No Wallet Needed:</strong> The system creates a temporary Burner Wallet for you. Just send SOL from any exchange!
+      </div>
+
       <div style={{ opacity: currentStep > 1 ? 0.7 : 1 }}>
         <div style={{ fontSize:'.7rem', color:'var(--text3)', marginBottom:'5px' }}>Step 1 — Your Solana address (will receive the position)</div>
         <input
@@ -940,46 +695,29 @@ function VaultCEXTab({ campaign, positionIndex, price, lamports, connection,
           onChange={e => handleAddrChange(e.target.value)}
           placeholder="Enter your Solana wallet address…"
           style={{ width:'100%', padding:'10px 13px', background:'var(--bg2)', border:'1px solid var(--border2)', borderRadius:'var(--r)', fontFamily:'var(--mono)', fontSize:'.75rem', color:'var(--text)', boxSizing:'border-box' }}
-          disabled={!!vaultPDA}
+          disabled={!!vaultAddress}
         />
         {addrError && <p style={{ fontSize:'.7rem', color:'var(--danger)', marginTop:'4px' }}>{addrError}</p>}
       </div>
 
-      {/* Step 2: Vault Setup */}
-      {!vaultPDA && (
-        <div style={{ display:'flex', flexDirection:'column', gap:'8px' }}>
-          <button className="btn btn-secondary btn-full" onClick={handleCreateVault} disabled={creating}>
-            {creating ? <span><span className="spin">⟳</span> Creating vault…</span> : anchorWallet ? '📦 Step 2 — Initialize Vault (Optional)' : '📦 Step 2 — Automatic Vault Setup'}
-          </button>
-          {!anchorWallet && (
-            <p style={{ fontSize:'.68rem', color:'var(--text3)', textAlign:'center' }}>
-              No wallet connected? No problem. The system will auto-initialize once SOL is sent.
-            </p>
-          )}
-        </div>
-      )}
-
-      {/* Step 3: Vault Address */}
-      {vaultPDA && !vaultReady && (
+      {vaultAddress && !vaultReady && (
         <div>
           <div style={{ fontSize:'.7rem', color:'var(--text3)', marginBottom:'5px' }}>
-            Step 3 — Send SOL to this vault address
+            Step 2 — Send SOL to this one-time address
           </div>
           <div style={{ display:'flex', alignItems:'center', gap:'8px', padding:'10px 13px', background:'var(--bg2)', border:'1px solid var(--border2)', borderRadius:'var(--r)' }}>
-            <span style={{ flex:1, fontFamily:'var(--mono)', fontSize:'.72rem', color:'var(--text2)', wordBreak:'break-all' }}>{vaultPDA}</span>
-            <button className="btn btn-ghost btn-sm" onClick={() => copy(vaultPDA, 'vault-addr')}>{copied==='vault-addr'?'✓':'Copy'}</button>
+            <span style={{ flex:1, fontFamily:'var(--mono)', fontSize:'.72rem', color:'var(--text2)', wordBreak:'break-all' }}>{vaultAddress}</span>
+            <button className="btn btn-ghost btn-sm" onClick={() => copy(vaultAddress, 'vault-addr')}>{copied==='vault-addr'?'✓':'Copy'}</button>
           </div>
           <div style={{ marginTop:'6px', padding:'10px 13px', background:'rgba(251,191,36,.05)', border:'1px solid rgba(251,191,36,.2)', borderRadius:'var(--r)', fontSize:'.73rem', lineHeight:1.65, color:'var(--text2)' }}>
-            <span style={{ color:'var(--amber)', fontWeight:700 }}>💸 How much to send:</span><br/>
-            • Vault must receive: <strong style={{ fontFamily:'var(--mono)', color:'var(--accent)' }}>{price} SOL</strong><br/>
-            • Recommended: <strong style={{ fontFamily:'var(--mono)', color:'var(--amber)' }}>≥ {(Number(price) + 0.01).toFixed(4)} SOL</strong> (covers exchange withdrawal fee ~0.001–0.02 SOL)<br/>
-            <span style={{ color:'var(--text3)', fontSize:'.69rem' }}>✅ No memo required — unique to position #{fmtPos(positionIndex)}. Any surplus above {price} SOL is kept as a sweep tip.</span>
+            <span style={{ color:'var(--amber)', fontWeight:700 }}>💸 Please send:</span><br/>
+            • Exact amount needed: <strong style={{ fontFamily:'var(--mono)', color:'var(--accent)' }}>{requiredSOL} SOL</strong> (includes 0.002 SOL for Solana network fees)<br/>
+            <span style={{ color:'var(--text3)', fontSize:'.69rem' }}>✅ No memo required. Any excess SOL will be refunded back to your address automatically. Please keep this tab open.</span>
           </div>
         </div>
       )}
 
-      {/* Payment Status Feedbacks */}
-      {vaultPDA && (
+      {vaultAddress && (
         <div style={{ marginTop: '4px' }}>
           <div style={{ 
             padding:'12px 16px', 
@@ -997,22 +735,12 @@ function VaultCEXTab({ campaign, positionIndex, price, lamports, connection,
             )}
             <div style={{ flex: 1 }}>
               <div style={{ fontWeight:600, fontSize:'.85rem', color: vaultReady ? 'var(--green)' : 'var(--accent)' }}>
-                {autoStatus
-                  ? autoStatus
-                  : sweeping
-                  ? 'Assigning position on-chain...'
-                  : vaultReady
-                  ? (anchorWallet ? 'Payment detected — assigning...' : 'Payment detected — watcher confirming...')
-                  : polling
-                  ? 'Awaiting payment...'
-                  : 'Waiting for monitor...'}
+                {autoStatus || (sweeping ? 'Assigning position on-chain...' : vaultReady ? 'Payment detected — assigning...' : 'Awaiting payment...')}
               </div>
               <div style={{ fontSize:'.72rem', color:'var(--text3)', lineHeight: 1.3 }}>
                 {vaultReady
-                  ? (sweeping || autoStatus
-                      ? 'Do not close this window — transaction in progress'
-                      : 'Funds confirmed. Position is being secured.')
-                  : `Currently: ${(vaultBalance / 1e9).toFixed(4)} / ${price} SOL`}
+                  ? 'Do not close this window — transaction in progress'
+                  : `Currently: ${(vaultBalance / 1e9).toFixed(4)} / ${requiredSOL} SOL`}
               </div>
             </div>
             {lastChecked && (
@@ -1026,68 +754,15 @@ function VaultCEXTab({ campaign, positionIndex, price, lamports, connection,
             <button 
               className="btn btn-ghost btn-full" 
               onClick={handleManualCheck} 
-              disabled={isChecking || !vaultPDA}
+              disabled={isChecking || !vaultAddress}
               style={{ marginTop: '8px', fontSize: '.75rem', height: '32px' }}
             >
               {isChecking ? 'Checking...' : 'Check Payment Now'}
             </button>
           )}
-
-          {/* CEX (no wallet): show Take My Position button once payment is funded */}
-          {vaultReady && !anchorWallet && (
-            <div style={{ marginTop:'10px', display:'flex', flexDirection:'column', gap:'8px' }}>
-              <div style={{ padding:'12px', background:'rgba(52,211,153,.08)', border:'1px solid rgba(52,211,153,.2)', borderRadius:'var(--r)', fontSize:'.78rem', color:'var(--green)', lineHeight:1.55, textAlign:'center' }}>
-                💰 <strong>Payment detected!</strong><br/>
-                <span style={{ color:'var(--text2)', fontSize:'.75rem' }}>
-                  {autoStatus || (sweeping ? 'Assigning on-chain — do not close this window…' : 'Your payment is confirmed. Click below to secure your position.')}
-                </span>
-              </div>
-              <button
-                className="btn btn-primary btn-full"
-                onClick={callWatcherSweep}
-                disabled={sweeping}
-                style={{ fontWeight:700, fontSize:'.9rem', display:'flex', alignItems:'center', justifyContent:'center', gap:'8px' }}
-              >
-                {sweeping
-                  ? <><span className="spin">⟳</span> Assigning on-chain…</>
-                  : `🎯 Take My Position #${String(positionIndex).padStart(2,'0')} Now`}
-              </button>
-            </div>
-          )}
-
-          {/* Wallet connected + sweeping: show progress */}
-          {vaultReady && anchorWallet && (sweeping || autoStatus) && (
-            <div style={{ marginTop:'10px', padding:'12px', background:'rgba(139,92,246,.08)', border:'1px solid rgba(139,92,246,.2)', borderRadius:'var(--r)', fontSize:'.78rem', color:'#a78bfa', lineHeight:1.5, textAlign:'center', display:'flex', alignItems:'center', justifyContent:'center', gap:'8px' }}>
-              <span className="spin">⟳</span>
-              <span>{autoStatus || 'Assigning position on-chain...'} Do not close this window.</span>
-            </div>
-          )}
         </div>
       )}
-
-      {/* Prize Info */}
-      <div style={{ padding: '12px', background: 'rgba(255, 193, 7, 0.05)', border: '1px solid rgba(255, 193, 7, 0.2)', borderRadius: 'var(--r)', fontSize: '0.75rem', color: 'var(--text2)', marginTop: '4px' }}>
-        <strong>🏆 Prize Information:</strong><br />
-        If you win, the prize will be automatically sent to your recipient address. No additional action or wallet required.
-      </div>
-
-      {/* Fallback manual sweep button — only shown if auto-sweep stalled (no autoStatus, not sweeping, vaultReady, wallet connected) */}
-      {vaultReady && anchorWallet && !sweeping && !autoStatus && !swept && (
-        <div style={{ marginTop:'12px' }}>
-          <button className="btn btn-primary btn-full" onClick={() => { const v = new PublicKey(vaultPDA); autoSweep(v, false); }} disabled={sweeping}>
-            ⚡ Confirm Position #{String(positionIndex).padStart(2,'0')} Now
-          </button>
-        </div>
-      )}
-
-      <p style={{ fontSize:'.69rem', color:'var(--text3)', textAlign:'center', lineHeight:1.5, marginTop: '8px' }}>
-        {polling 
-          ? "Monitoring active. The system will auto-confirm once funds are detected."
-          : "Manual check available if auto-monitoring is paused."}
-      </p>
     </div>
-
-
   );
 }
 

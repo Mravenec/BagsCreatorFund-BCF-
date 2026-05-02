@@ -115,17 +115,7 @@ pub struct CampaignAccount {
 }
 // Total: 32+8+8+32+8+8+8+8+8+8+1+1+6+8+32+8+8+120+600+4000 = 4918
 
-/// PDA ["vault", campaign_key, position_index_byte, recipient_key]
-/// Temporary personal escrow for CEX/exchange users.
-/// Funded by user directly; watcher sweeps it into campaign when balance >= price.
-#[account]
-pub struct PositionVault {
-    pub campaign:       Pubkey,  // 32
-    pub recipient:      Pubkey,  // 32
-    pub price_lamports: u64,     // 8
-    pub position_index: u8,      // 1
-    pub bump:           u8,      // 1
-} // disc 8 + 74 = 82 bytes
+
 
 // ─── Program ──────────────────────────────────────────────────────────────────
 #[program]
@@ -261,8 +251,9 @@ pub mod bags_creator_fund {
              c.position_price_lamports, c.tokens_per_position, ctx.accounts.campaign.key(),
              c.creator, c.project_index)
         };
-        let buyer_key    = ctx.accounts.buyer.key();
-        let treasury_cut = price * TREASURY_BPS / 10_000;
+        let buyer_key     = ctx.accounts.buyer.key();
+        let recipient_key = ctx.accounts.recipient.key();
+        let treasury_cut  = price * TREASURY_BPS / 10_000;
 
         // Validate project matches campaign
         require_keys_eq!(ctx.accounts.project.creator, creator_snap, BCFError::Unauthorized);
@@ -292,7 +283,7 @@ pub mod bags_creator_fund {
         {
             let mut c = ctx.accounts.campaign.load_mut()?;
             c.positions[position_index as usize].filled = 1;
-            c.positions[position_index as usize].owner  = buyer_key;
+            c.positions[position_index as usize].owner  = recipient_key;
             c.total_collected       += price;
             c.treasury_contribution += treasury_cut;
         }
@@ -301,111 +292,7 @@ pub mod bags_creator_fund {
         Ok(())
     }
 
-    pub fn record_external_payment(ctx: Context<RecordExternalPayment>, position_index: u8, payer: Pubkey) -> Result<()> {
-        let (status, pos_filled, creator, price, proj_idx) = {
-            let c = ctx.accounts.campaign.load()?;
-            (c.status, c.positions[position_index as usize].filled, c.creator, c.position_price_lamports, c.project_index)
-        };
-        let authority = ctx.accounts.authority.key();
 
-        require_keys_eq!(ctx.accounts.project.creator, creator, BCFError::Unauthorized);
-        require!(ctx.accounts.project.project_index == proj_idx, BCFError::Unauthorized);
-        require!(status == 1, BCFError::CampaignNotActive);
-        require!((position_index as usize) < POSITIONS, BCFError::InvalidPosition);
-        require!(pos_filled == 0, BCFError::PositionTaken);
-        require_keys_eq!(creator, authority, BCFError::Unauthorized);
-
-        let treasury_cut = price * TREASURY_BPS / 10_000;
-
-        let mut c = ctx.accounts.campaign.load_mut()?;
-        c.positions[position_index as usize].filled = 1;
-        c.positions[position_index as usize].owner  = payer;
-        c.total_collected       += price;
-        c.treasury_contribution += treasury_cut;
-        Ok(())
-    }
-
-    /// Create a personal vault PDA for a CEX/exchange user.
-    /// recipient = Solana address that will own the position.
-    /// Anyone (payer) can pay the rent to create it.
-    pub fn create_position_vault(
-        ctx: Context<CreatePositionVault>,
-        position_index: u8,
-    ) -> Result<()> {
-        let price_lamports = {
-            let c = ctx.accounts.campaign.load()?;
-            require!(c.status == 1, BCFError::CampaignNotActive);
-            require!((position_index as usize) < POSITIONS, BCFError::InvalidPosition);
-            require!(c.positions[position_index as usize].filled == 0, BCFError::PositionTaken);
-            c.position_price_lamports
-        };
-
-        let vault = &mut ctx.accounts.position_vault;
-        vault.campaign       = ctx.accounts.campaign.key();
-        vault.recipient      = ctx.accounts.recipient.key();
-        vault.price_lamports = price_lamports;
-        vault.position_index = position_index;
-        vault.bump           = ctx.bumps.position_vault;
-        Ok(())
-    }
-
-    /// Sweep a funded vault into the campaign and assign the position.
-    /// Closes the vault — remaining rent lamports go to `sweeper`.
-    pub fn sweep_position_vault(
-        ctx: Context<SweepPositionVault>,
-        position_index: u8,
-    ) -> Result<()> {
-        let vault     = &ctx.accounts.position_vault;
-        let recipient = vault.recipient;
-        let price     = vault.price_lamports;
-
-        require_keys_eq!(vault.campaign,       ctx.accounts.campaign.key(),   BCFError::Unauthorized);
-        require_keys_eq!(vault.recipient,      ctx.accounts.recipient.key(),  BCFError::Unauthorized);
-        require!(vault.position_index == position_index, BCFError::InvalidPosition);
-
-        let (status, deadline, pos_filled) = {
-            let c = ctx.accounts.campaign.load()?;
-            (c.status, c.deadline, c.positions[position_index as usize].filled)
-        };
-
-        require!(status == 1, BCFError::CampaignNotActive);
-        require!(Clock::get()?.unix_timestamp < deadline, BCFError::CampaignExpired);
-        require!((position_index as usize) < POSITIONS, BCFError::InvalidPosition);
-        require!(pos_filled == 0,  BCFError::PositionTaken);
-
-        let vault_bal = ctx.accounts.position_vault.to_account_info().lamports();
-        require!(vault_bal >= price, BCFError::InsufficientFunds);
-
-        // Transfer price lamports: vault → campaign
-        **ctx.accounts.position_vault.to_account_info().try_borrow_mut_lamports()? -= price;
-        **ctx.accounts.campaign.to_account_info().try_borrow_mut_lamports()?       += price;
-
-        // Assign position on-chain
-        {
-            let mut c = ctx.accounts.campaign.load_mut()?;
-            c.positions[position_index as usize].filled = 1;
-            c.positions[position_index as usize].owner  = recipient;
-            c.total_collected       += price;
-            let cut = price * TREASURY_BPS / 10_000;
-            c.treasury_contribution += cut;
-        }
-        // Anchor `close = sweeper` drains remaining rent to sweeper after this returns
-        Ok(())
-    }
-
-    /// Refund a vault — returns all SOL to recipient.
-    /// Use when campaign expired, position taken, or user changed mind.
-    /// Anchor `close = recipient` drains all lamports to recipient.
-    pub fn refund_position_vault(
-        ctx: Context<RefundPositionVault>,
-        position_index: u8,
-    ) -> Result<()> {
-        let vault = &ctx.accounts.position_vault;
-        require_keys_eq!(vault.campaign,  ctx.accounts.campaign.key(),  BCFError::Unauthorized);
-        require_keys_eq!(vault.recipient, ctx.accounts.recipient.key(), BCFError::Unauthorized);
-        require!(vault.position_index == position_index, BCFError::InvalidPosition);
-        Ok(())
-    }
 
     pub fn resolve_campaign(ctx: Context<ResolveCampaign>) -> Result<()> {
         let (status, deadline, prize, collected, campaign_key) = {
@@ -636,24 +523,16 @@ pub struct BuyPosition<'info> {
     #[account(mut)]
     pub buyer: Signer<'info>,
 
+    /// CHECK: The address that will own the position.
+    pub recipient: AccountInfo<'info>,
+
     /// CHECK: identity only — validated in instruction handler
     pub project_creator: AccountInfo<'info>,
 
     pub system_program: Program<'info, System>,
 }
 
-#[derive(Accounts)]
-pub struct RecordExternalPayment<'info> {
-    #[account(mut)]
-    pub campaign: AccountLoader<'info, CampaignAccount>,
 
-    /// Project PDA — validated in instruction handler
-    #[account(mut)]
-    pub project: Account<'info, ProjectAccount>,
-
-    #[account(mut)]
-    pub authority: Signer<'info>,
-}
 
 #[derive(Accounts)]
 pub struct ResolveCampaign<'info> {
@@ -716,75 +595,7 @@ pub struct WithdrawTreasury<'info> {
     pub creator: Signer<'info>,
 }
 
-#[derive(Accounts)]
-#[instruction(position_index: u8)]
-pub struct CreatePositionVault<'info> {
-    pub campaign: AccountLoader<'info, CampaignAccount>,
 
-    #[account(
-        init,
-        payer = payer,
-        space = 8 + 32 + 32 + 8 + 1 + 1 + 6, // disc + fields + alignment padding = 88
-        seeds = [b"vault", campaign.key().as_ref(), &[position_index], recipient.key().as_ref()],
-        bump,
-    )]
-    pub position_vault: Account<'info, PositionVault>,
-
-    /// CHECK: address that will own the position — used only as seed component
-    pub recipient: AccountInfo<'info>,
-
-    #[account(mut)]
-    pub payer: Signer<'info>,
-
-    pub system_program: Program<'info, System>,
-}
-
-#[derive(Accounts)]
-#[instruction(position_index: u8)]
-pub struct SweepPositionVault<'info> {
-    #[account(mut)]
-    pub campaign: AccountLoader<'info, CampaignAccount>,
-
-    #[account(
-        mut,
-        seeds = [b"vault", campaign.key().as_ref(), &[position_index], recipient.key().as_ref()],
-        bump = position_vault.bump,
-        close = sweeper,   // remaining rent → sweeper after price moved to campaign
-    )]
-    pub position_vault: Account<'info, PositionVault>,
-
-    /// CHECK: validated against position_vault.recipient in instruction handler
-    pub recipient: AccountInfo<'info>,
-
-    #[account(mut)]
-    pub sweeper: Signer<'info>,
-
-    pub system_program: Program<'info, System>,
-}
-
-#[derive(Accounts)]
-#[instruction(position_index: u8)]
-pub struct RefundPositionVault<'info> {
-    pub campaign: AccountLoader<'info, CampaignAccount>,
-
-    #[account(
-        mut,
-        seeds = [b"vault", campaign.key().as_ref(), &[position_index], recipient.key().as_ref()],
-        bump = position_vault.bump,
-        close = recipient,  // all lamports (payment + rent) → recipient
-    )]
-    pub position_vault: Account<'info, PositionVault>,
-
-    /// CHECK: validated against position_vault.recipient — receives all funds on close
-    #[account(mut)]
-    pub recipient: AccountInfo<'info>,
-
-    /// Anyone can trigger a refund (watcher, recipient, or creator)
-    #[account(mut)]
-    pub initiator: Signer<'info>,
-
-    pub system_program: Program<'info, System>,
-}
 
 // ─── Errors ───────────────────────────────────────────────────────────────────
 #[error_code]

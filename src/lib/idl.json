@@ -140,6 +140,11 @@
           "isSigner": true
         },
         {
+          "name": "recipient",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
           "name": "projectCreator",
           "isMut": false,
           "isSigner": false
@@ -154,36 +159,6 @@
         {
           "name": "positionIndex",
           "type": "u8"
-        }
-      ]
-    },
-    {
-      "name": "recordExternalPayment",
-      "accounts": [
-        {
-          "name": "campaign",
-          "isMut": true,
-          "isSigner": false
-        },
-        {
-          "name": "project",
-          "isMut": true,
-          "isSigner": false
-        },
-        {
-          "name": "authority",
-          "isMut": true,
-          "isSigner": true
-        }
-      ],
-      "args": [
-        {
-          "name": "positionIndex",
-          "type": "u8"
-        },
-        {
-          "name": "payer",
-          "type": "publicKey"
         }
       ]
     },
@@ -268,114 +243,6 @@
         {
           "name": "amountLamports",
           "type": "u64"
-        }
-      ]
-    },
-    {
-      "name": "createPositionVault",
-      "accounts": [
-        {
-          "name": "campaign",
-          "isMut": false,
-          "isSigner": false
-        },
-        {
-          "name": "positionVault",
-          "isMut": true,
-          "isSigner": false
-        },
-        {
-          "name": "recipient",
-          "isMut": false,
-          "isSigner": false
-        },
-        {
-          "name": "payer",
-          "isMut": true,
-          "isSigner": true
-        },
-        {
-          "name": "systemProgram",
-          "isMut": false,
-          "isSigner": false
-        }
-      ],
-      "args": [
-        {
-          "name": "positionIndex",
-          "type": "u8"
-        }
-      ]
-    },
-    {
-      "name": "sweepPositionVault",
-      "accounts": [
-        {
-          "name": "campaign",
-          "isMut": true,
-          "isSigner": false
-        },
-        {
-          "name": "positionVault",
-          "isMut": true,
-          "isSigner": false
-        },
-        {
-          "name": "recipient",
-          "isMut": false,
-          "isSigner": false
-        },
-        {
-          "name": "sweeper",
-          "isMut": true,
-          "isSigner": true
-        },
-        {
-          "name": "systemProgram",
-          "isMut": false,
-          "isSigner": false
-        }
-      ],
-      "args": [
-        {
-          "name": "positionIndex",
-          "type": "u8"
-        }
-      ]
-    },
-    {
-      "name": "refundPositionVault",
-      "accounts": [
-        {
-          "name": "campaign",
-          "isMut": false,
-          "isSigner": false
-        },
-        {
-          "name": "positionVault",
-          "isMut": true,
-          "isSigner": false
-        },
-        {
-          "name": "recipient",
-          "isMut": true,
-          "isSigner": false
-        },
-        {
-          "name": "initiator",
-          "isMut": true,
-          "isSigner": true
-        },
-        {
-          "name": "systemProgram",
-          "isMut": false,
-          "isSigner": false
-        }
-      ],
-      "args": [
-        {
-          "name": "positionIndex",
-          "type": "u8"
         }
       ]
     }
@@ -558,34 +425,6 @@
                 100
               ]
             }
-          }
-        ]
-      }
-    },
-    {
-      "name": "PositionVault",
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "campaign",
-            "type": "publicKey"
-          },
-          {
-            "name": "recipient",
-            "type": "publicKey"
-          },
-          {
-            "name": "priceLamports",
-            "type": "u64"
-          },
-          {
-            "name": "positionIndex",
-            "type": "u8"
-          },
-          {
-            "name": "bump",
-            "type": "u8"
           }
         ]
       }
@@ -834,7 +673,7 @@
     {
       "code": 6008,
       "name": "HasWinner",
-      "msg": "Has a winner \u2014 use claim"
+      "msg": "Has a winner — use claim"
     },
     {
       "code": 6009,
