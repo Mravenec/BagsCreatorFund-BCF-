@@ -11,7 +11,7 @@ import {
 } from "../lib/programClient.js";
 import { Keypair } from "@solana/web3.js";
 import { AnchorProvider } from "@coral-xyz/anchor";
-import { toUSDC, TOKENS_PER_SOL, TREASURY_FEE_PCT, BCF_PROGRAM_ID, WATCHER_URL, CEX_FEE_BUFFER_SOL, IS_MAINNET, NETWORK } from "../lib/constants.js";
+import { toUSDC, TOKENS_PER_SOL, TREASURY_FEE_PCT, BCF_PROGRAM_ID, WATCHER_URL, CEX_FEE_BUFFER_SOL, CEX_MIN_REFUND_LAMPORTS, IS_MAINNET, NETWORK } from "../lib/constants.js";
 import { shortAddr, explorerTx, getSOLBalance, requestAirdrop } from "../lib/solana.js";
 import { bagsTokenUrl } from "../lib/bags.js";
 import { useToast } from "../components/Toast.jsx";
@@ -511,11 +511,15 @@ function BurnerCEXTab({ campaign, positionIndex, price, lamports, connection, to
       
       setVaultBalance(totalReceived);
       
-      // We need at least the price + ~0.002 SOL for rent and fees
-      const requiredLamports = lamports + 2000000;
+      // We need at least the price + CEX buffer (covers exchange fee + Solana TX fees)
+      const requiredLamports = lamports + Math.floor(CEX_FEE_BUFFER_SOL * LAMPORTS_PER_SOL);
 
       if (totalReceived >= requiredLamports) {
         validDeposit = true;
+      } else if (totalReceived > 0 && totalReceived < requiredLamports) {
+        // Partial payment detected — notify user but keep polling
+        const shortfall = ((requiredLamports - totalReceived) / 1e9).toFixed(4);
+        setAutoStatus(`⚠️ Received ${(totalReceived/1e9).toFixed(4)} SOL — need ${shortfall} more SOL`);
       }
 
       // Check if position already filled on-chain
@@ -570,16 +574,22 @@ function BurnerCEXTab({ campaign, positionIndex, price, lamports, connection, to
         signers: [burnerKeypair]
       });
 
-      // Refund remaining balance
+      // Refund remaining balance (change) if it exceeds the minimum refund threshold
       try {
         const bal = await connection.getBalance(bPub);
-        if (bal > 5000) {
-           const refundTx = new Transaction().add(SystemProgram.transfer({ fromPubkey: bPub, toPubkey: new PublicKey(recipientAddr), lamports: bal - 5000 }));
+        // Reserve ~5000 lamports for the TX fee of the refund itself
+        const refundable = bal - 5000;
+        if (refundable > CEX_MIN_REFUND_LAMPORTS) {
+           // Worth sending back — full change refund
+           const refundTx = new Transaction().add(SystemProgram.transfer({ fromPubkey: bPub, toPubkey: new PublicKey(recipientAddr), lamports: refundable }));
            refundTx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
            refundTx.feePayer = bPub;
            refundTx.sign(burnerKeypair);
            await connection.sendRawTransaction(refundTx.serialize());
+           const changeSOL = (refundable / 1e9).toFixed(6);
+           toast(`💸 Change of ${changeSOL} SOL refunded to your address.`, 'info');
         }
+        // If refundable <= CEX_MIN_REFUND_LAMPORTS the dust stays in burner (cheaper than TX fee)
       } catch (e) { console.warn("Change refund failed", e); }
 
       sweptRef.current = true;
@@ -605,18 +615,26 @@ function BurnerCEXTab({ campaign, positionIndex, price, lamports, connection, to
 
   const executeRefund = async (provider, bPub, bal) => {
     if (bal <= 5000) return;
+    const refundable = bal - 5000;
+    if (refundable < CEX_MIN_REFUND_LAMPORTS) {
+      // Dust — not worth a refund TX
+      console.warn('[BCF-CEX] Refund amount too small to justify TX fee, skipping.', refundable);
+      return;
+    }
     setRefundPending(true);
     setPolling(false);
-    toast('⚠️ Position taken by another user. Refunding your payment...', 'error');
+    toast('⚠️ Position taken by another user. Refunding your payment automatically...', 'error');
     try {
-      const refundTx = new Transaction().add(SystemProgram.transfer({ fromPubkey: bPub, toPubkey: new PublicKey(recipientAddr), lamports: bal - 5000 }));
+      const refundTx = new Transaction().add(SystemProgram.transfer({ fromPubkey: bPub, toPubkey: new PublicKey(recipientAddr), lamports: refundable }));
       refundTx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
       refundTx.feePayer = bPub;
       refundTx.sign(burnerKeypair);
       await connection.sendRawTransaction(refundTx.serialize());
-      toast('✅ Refund complete. SOL returned to your address.', 'success');
+      const refundSOL = (refundable / 1e9).toFixed(4);
+      toast(`✅ Refund of ${refundSOL} SOL complete. Returned to your address.`, 'success');
     } catch (e) {
       console.error("Refund failed", e);
+      toast('⚠️ Auto-refund failed. Contact support with your transaction details.', 'error');
     }
   };
 
@@ -626,8 +644,8 @@ function BurnerCEXTab({ campaign, positionIndex, price, lamports, connection, to
     await checkStatus();
   }
 
-  const requiredSOL = (price + 0.002).toFixed(4); // Extra for fees
-  const vaultReady = vaultBalance >= (lamports + 2000000);
+  const requiredSOL = (price + CEX_FEE_BUFFER_SOL).toFixed(4); // e.g. 0.0210 when price=0.0200
+  const vaultReady = vaultBalance >= (lamports + Math.floor(CEX_FEE_BUFFER_SOL * LAMPORTS_PER_SOL));
   const currentStep = swept ? 4 : vaultReady ? 3 : burnerKeypair ? 2 : 1;
   const vaultAddress = burnerKeypair?.publicKey.toBase58();
 
@@ -711,7 +729,7 @@ function BurnerCEXTab({ campaign, positionIndex, price, lamports, connection, to
           </div>
           <div style={{ marginTop:'6px', padding:'10px 13px', background:'rgba(251,191,36,.05)', border:'1px solid rgba(251,191,36,.2)', borderRadius:'var(--r)', fontSize:'.73rem', lineHeight:1.65, color:'var(--text2)' }}>
             <span style={{ color:'var(--amber)', fontWeight:700 }}>💸 Please send:</span><br/>
-            • Exact amount needed: <strong style={{ fontFamily:'var(--mono)', color:'var(--accent)' }}>{requiredSOL} SOL</strong> (includes 0.002 SOL for Solana network fees)<br/>
+            • Exact amount needed: <strong style={{ fontFamily:'var(--mono)', color:'var(--accent)' }}>{requiredSOL} SOL</strong> (includes 0.001 SOL buffer for exchange & network fees)<br/>
             <span style={{ color:'var(--text3)', fontSize:'.69rem' }}>✅ No memo required. Any excess SOL will be refunded back to your address automatically. Please keep this tab open.</span>
           </div>
         </div>

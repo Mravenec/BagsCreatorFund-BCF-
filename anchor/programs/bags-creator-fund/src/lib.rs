@@ -40,6 +40,7 @@ fn copy_str(src: &str, dst: &mut [u8]) {
 #[event] pub struct CampaignActivated { pub campaign: Pubkey, pub deadline: i64 }
 #[event] pub struct PositionPurchased { pub campaign: Pubkey, pub position_index: u8, pub buyer: Pubkey, pub price_lamports: u64, pub tokens_received: u64 }
 #[event] pub struct CampaignResolved  { pub campaign: Pubkey, pub winning_position: u8, pub has_winner: bool, pub winner: Pubkey, pub total_pot: u64, pub winning_slot: u64 }
+#[event] pub struct TreasuryDeposit     { pub project: Pubkey, pub creator: Pubkey, pub project_index: u64, pub amount_lamports: u64, pub new_total: u64 }
 #[event] pub struct TreasuryWithdrawal{ pub project: Pubkey, pub creator: Pubkey, pub project_index: u64, pub amount_lamports: u64, pub remaining: u64 }
 
 // ─── Data types ───────────────────────────────────────────────────────────────
@@ -427,6 +428,40 @@ pub mod bags_creator_fund {
         Ok(())
     }
 
+    /// Creator deposits SOL directly from their Web3 wallet into the project treasury.
+    /// This is useful to reload the treasury without needing a campaign to resolve first.
+    pub fn deposit_to_treasury(ctx: Context<DepositToTreasury>, amount_lamports: u64) -> Result<()> {
+        let creator_key  = ctx.accounts.creator.key();
+        let proj_creator = ctx.accounts.project.creator;
+        let proj_idx     = ctx.accounts.project.project_index;
+        let project_key  = ctx.accounts.project.key();
+
+        require_keys_eq!(proj_creator, creator_key, BCFError::Unauthorized);
+        require!(amount_lamports > 0, BCFError::InsufficientFunds);
+
+        system_program::transfer(
+            CpiContext::new(
+                ctx.accounts.system_program.to_account_info(),
+                system_program::Transfer {
+                    from: ctx.accounts.creator.to_account_info(),
+                    to:   ctx.accounts.project.to_account_info(),
+                },
+            ),
+            amount_lamports,
+        )?;
+
+        ctx.accounts.project.treasury_lamports += amount_lamports;
+
+        emit!(TreasuryDeposit {
+            project:        project_key,
+            creator:        creator_key,
+            project_index:  proj_idx,
+            amount_lamports,
+            new_total:      ctx.accounts.project.treasury_lamports,
+        });
+        Ok(())
+    }
+
     pub fn withdraw_treasury(ctx: Context<WithdrawTreasury>, amount_lamports: u64) -> Result<()> {
         let proj_creator = ctx.accounts.project.creator;
         let signer_key   = ctx.accounts.creator.key();
@@ -577,6 +612,22 @@ pub struct RouteNoWinner<'info> {
 
     /// CHECK: validated against campaign.creator in instruction handler — identity check only
     pub project_creator: AccountInfo<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[instruction(amount_lamports: u64)]
+pub struct DepositToTreasury<'info> {
+    #[account(
+        mut,
+        seeds = [b"project", creator.key().as_ref(), &project.project_index.to_le_bytes()],
+        bump,
+    )]
+    pub project: Account<'info, ProjectAccount>,
+
+    #[account(mut)]
+    pub creator: Signer<'info>,
 
     pub system_program: Program<'info, System>,
 }

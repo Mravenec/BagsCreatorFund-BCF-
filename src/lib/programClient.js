@@ -303,6 +303,27 @@ export async function routeToTreasuryOnChain(provider, { campaignPDA }) {
   return { tx, project: updatedProject };
 }
 
+/** Creator deposits SOL from their Web3 wallet directly into the project treasury */
+export async function depositToTreasuryOnChain(provider, { projectIndex, amountLamports }) {
+  const program = getProgram(provider);
+  const creator = provider.wallet.publicKey;
+  if (!creator) throw new Error('Wallet not connected');
+
+  const [projectPDA] = getProjectPDA(creator, projectIndex);
+
+  const tx = await program.methods
+    .depositToTreasury(new BN(amountLamports))
+    .accounts({
+      project:       projectPDA,
+      creator,
+      systemProgram: SystemProgram.programId,
+    })
+    .rpc({ commitment: 'confirmed' });
+
+  const updated = await program.account.projectAccount.fetch(projectPDA);
+  return { tx, project: updated };
+}
+
 /** Creator withdraws from a specific project treasury */
 export async function withdrawTreasuryOnChain(provider, { projectIndex, amountLamports }) {
   const program = getProgram(provider);

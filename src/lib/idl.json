@@ -226,6 +226,32 @@
       "args": []
     },
     {
+      "name": "depositToTreasury",
+      "accounts": [
+        {
+          "name": "project",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "creator",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "systemProgram",
+          "isMut": false,
+          "isSigner": false
+        }
+      ],
+      "args": [
+        {
+          "name": "amountLamports",
+          "type": "u64"
+        }
+      ]
+    },
+    {
       "name": "withdrawTreasury",
       "accounts": [
         {
@@ -673,7 +699,7 @@
     {
       "code": 6008,
       "name": "HasWinner",
-      "msg": "Has a winner — use claim"
+      "msg": "Has a winner \u2014 use claim"
     },
     {
       "code": 6009,

@@ -137,6 +137,15 @@ export const WATCHER_URL = (typeof import.meta !== 'undefined' && import.meta.en
   : '/watcher';
 
 // ─── CEX payment fee buffer ────────────────────────────────────────────────────
-// Exchanges charge 0.001–0.02 SOL withdrawal fee. We recommend sending
-// position_price + CEX_FEE_BUFFER_SOL to guarantee the vault receives full price.
-export const CEX_FEE_BUFFER_SOL = 0.01; // 0.01 SOL buffer for exchange fees
+// Extra SOL the user must send on top of the position price when paying via CEX.
+// Covers two costs:
+//   • Exchange withdrawal fee (typically 0.0005–0.001 SOL taken by the exchange).
+//   • Solana transaction fees (~0.000005–0.00002 SOL for the burner wallet TXs).
+// Net effect: if price = 0.0200 SOL, the CEX tab asks for 0.0210 SOL.
+// Any excess beyond actual TX costs is automatically refunded to the recipient.
+export const CEX_FEE_BUFFER_SOL = 0.001; // 0.001 SOL total buffer (was 0.01)
+
+// Minimum refund amount (lamports). If excess < this after buying position,
+// it's not worth paying another TX fee to refund — the tiny amount stays in
+// the burner wallet (covering dust), otherwise a full refund is sent.
+export const CEX_MIN_REFUND_LAMPORTS = 10_000; // ~0.00001 SOL threshold

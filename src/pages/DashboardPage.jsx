@@ -4,7 +4,7 @@ import { useWallet, useConnection, useAnchorWallet } from "@solana/wallet-adapte
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import {
   fetchAllProjects, fetchCreatorCampaigns, withdrawTreasuryOnChain,
-  routeToTreasuryOnChain, claimPrizeOnChain, resolveCampaignOnChain,
+  depositToTreasuryOnChain, routeToTreasuryOnChain, claimPrizeOnChain, resolveCampaignOnChain,
   campaignAccountToDisplay, posStatus, fmtPos, timeLeft, isExpired,
 } from "../lib/programClient.js";
 import { AnchorProvider } from "@coral-xyz/anchor";
@@ -33,6 +33,10 @@ export default function DashboardPage() {
   // Withdraw modal
   const [wModal, setWModal]     = useState({ show: false, project: null });
   const [wAmount, setWAmount]   = useState("");
+
+  // Fund Treasury modal (top-up from connected wallet)
+  const [fModal, setFModal]     = useState({ show: false, project: null });
+  const [fAmount, setFAmount]   = useState("");
 
   // Reinvest modal  
   const [rModal, setRModal]     = useState({ show: false, project: null });
@@ -165,6 +169,29 @@ export default function DashboardPage() {
       setTimeout(() => refresh(), 1200);
     } catch (e) {
       toast("Withdrawal failed: " + (e.message || ""), "error");
+      setLoading(false);
+    }
+  };
+
+  const confirmFundTreasury = async () => {
+    const project = fModal.project;
+    const amtSOL  = parseFloat(fAmount);
+    if (isNaN(amtSOL) || amtSOL <= 0) { toast("Invalid amount", "error"); return; }
+    if (amtSOL > balance) { toast(`Insufficient balance: ${balance.toFixed(4)} SOL in wallet`, "error"); return; }
+    setFModal({ show: false, project: null });
+    setLoading(true);
+    toast(`Depositing ${amtSOL} SOL into ${project.name} treasury...`, "info");
+    try {
+      const provider  = new AnchorProvider(connection, wallet, { commitment: "confirmed" });
+      const lamports  = Math.floor(amtSOL * LAMPORTS_PER_SOL);
+      await depositToTreasuryOnChain(provider, {
+        projectIndex:   project.projectIndex,
+        amountLamports: lamports,
+      });
+      toast(`✅ ${amtSOL} SOL deposited into ${project.name} treasury!`, "success");
+      setTimeout(() => refresh(), 1200);
+    } catch (e) {
+      toast("Deposit failed: " + (e.message || ""), "error");
       setLoading(false);
     }
   };
@@ -469,6 +496,12 @@ export default function DashboardPage() {
                         </button>
                       )}
                     </div>
+                    {/* Fund treasury from wallet */}
+                    <button
+                      onClick={e => { e.stopPropagation(); setFModal({ show: true, project: p }); setFAmount(""); }}
+                      className="btn btn-ghost btn-sm" style={{ width: "100%", fontSize: ".72rem", marginBottom: "8px", color: "var(--accent)", borderColor: "rgba(56,189,248,.3)" }}>
+                      ⬇ Fund Treasury from Wallet
+                    </button>
                     {p.treasury.balanceSOL > 0 && (
                       <button
                         onClick={e => { e.stopPropagation(); setRModal({ show: true, project: p }); setRAmount(p.treasury.balanceSOL.toFixed(4)); setRQuote(null); setRStep(1); }}
@@ -817,6 +850,56 @@ export default function DashboardPage() {
                   {rLoading ? "Processing..." : `🔥 Confirm — Buy $${rModal.project?.symbol}`}
                 </button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── FUND TREASURY MODAL ── */}
+      {fModal.show && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.85)", backdropFilter: "blur(8px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: "20px" }}>
+          <div className="card" style={{ maxWidth: "420px", width: "100%", padding: "32px" }}>
+            <h2 style={{ marginBottom: "6px", fontWeight: 800 }}>⬇ Fund Treasury</h2>
+            <p style={{ color: "var(--text3)", fontSize: ".85rem", marginBottom: "20px" }}>
+              Deposit SOL from your wallet directly into the <strong style={{ color: "var(--accent)" }}>${fModal.project?.symbol}</strong> treasury on-chain.
+            </p>
+
+            <div style={{ background: "var(--bg2)", padding: "14px", borderRadius: "10px", marginBottom: "20px", border: "1px solid var(--border)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "6px" }}>
+                <div>
+                  <div style={{ fontSize: ".68rem", color: "var(--text3)", textTransform: "uppercase", marginBottom: "3px" }}>Current Treasury</div>
+                  <div style={{ fontSize: "1.1rem", fontWeight: 800, color: "var(--green)" }}>{fModal.project?.treasury.balanceSOL.toFixed(4)} SOL</div>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ fontSize: ".68rem", color: "var(--text3)", textTransform: "uppercase", marginBottom: "3px" }}>Wallet Balance</div>
+                  <div style={{ fontSize: "1.1rem", fontWeight: 800, color: "var(--accent)" }}>{balance.toFixed(4)} SOL</div>
+                </div>
+              </div>
+            </div>
+
+            <label style={{ display: "block", fontSize: ".78rem", color: "var(--text2)", marginBottom: "6px" }}>Amount to deposit (SOL)</label>
+            <input type="number" value={fAmount} onChange={e => setFAmount(e.target.value)}
+              className="input" style={{ marginBottom: "8px", fontSize: "1.1rem", fontWeight: 600 }}
+              placeholder="0.00" step="0.001" min="0" max={balance} />
+
+            {/* Quick presets */}
+            <div style={{ display: "flex", gap: "6px", marginBottom: "16px" }}>
+              {[0.1, 0.5, 1, 2].map(v => (
+                <button key={v} className="btn btn-ghost btn-sm" style={{ flex: 1, fontSize: ".7rem" }}
+                  onClick={() => setFAmount(String(v))}>{v} SOL</button>
+              ))}
+            </div>
+
+            <div style={{ padding: "8px 12px", background: "rgba(56,189,248,.06)", border: "1px solid rgba(56,189,248,.2)", borderRadius: "7px", marginBottom: "18px", fontSize: ".74rem", color: "var(--accent)" }}>
+              ℹ️ Funds deposited here can be reinvested in ${fModal.project?.symbol} or withdrawn at any time.
+            </div>
+
+            <div style={{ display: "flex", gap: "10px" }}>
+              <button className="btn btn-outline" style={{ flex: 1 }} onClick={() => setFModal({ show: false, project: null })}>Cancel</button>
+              <button className="btn btn-primary" style={{ flex: 2, background: "linear-gradient(90deg, #0e7490 0%, #38bdf8 100%)", border: "none" }} onClick={confirmFundTreasury}
+                disabled={!fAmount || parseFloat(fAmount) <= 0 || parseFloat(fAmount) > balance}>
+                ⬇ Confirm Deposit
+              </button>
             </div>
           </div>
         </div>
