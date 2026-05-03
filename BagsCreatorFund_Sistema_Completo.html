@@ -430,8 +430,8 @@ footer strong{color:var(--text2);font-weight:500}
 <!-- Step 3: Amount shown -->
 <rect x="390" y="30" width="170" height="52" rx="8" fill="#0e0e1c" stroke="#2a2a4a" stroke-width="1"/>
 <text x="475" y="50" text-anchor="middle" fill="#eeedf8" font-family="'Space Mono'" font-size="9" font-weight="700">③ Dirección mostrada</text>
-<text x="475" y="65" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">precio + 0.001 SOL buffer</text>
-<text x="475" y="78" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">ej: 0.0210 si precio = 0.0200</text>
+<text x="475" y="65" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">precio + 0.0100 SOL buffer</text>
+<text x="475" y="78" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">ej: 0.1100 si precio = 0.1000</text>
 <line x1="560" y1="56" x2="600" y2="56" stroke="#4f4d70" stroke-width="1" marker-end="url(#a4)"/>
 
 <!-- Step 4: User sends SOL from CEX -->
@@ -507,8 +507,8 @@ footer strong{color:var(--text2);font-weight:500}
 </tr>
 <tr>
   <td>② Detección de pago</td>
-  <td><code>getSignaturesForAddress</code> + <code>getParsedTransaction</code> cada 5 segundos (máximo 72 intentos = 6 minutos). Se suman todos los <code>transfer</code> recibidos en el Burner. Si el total ≥ precio + 0.001 SOL → procede. Si es parcial → notifica déficit y espera. Si hay pago pero la posición ya fue tomada → ejecuta reembolso.</td>
-  <td>On-chain determinism. La validación no depende del estado local del browser — cualquier manipulación de <code>localStorage</code> no afecta el resultado.</td>
+  <td><code>getSignaturesForAddress</code> + <code>getParsedTransaction</code> cada 5 segundos. Se suman todos los <code>transfer</code> recibidos. Si el total ≥ precio + 0.0010 SOL (mínimo gas) → procede. Si es parcial → notifica déficit y espera. Si hay pago pero la posición ya fue tomada → ejecuta reembolso.</td>
+  <td>Safe Buffer: Se solicita 0.0100 SOL extra para cubrir cualquier comisión de exchange y asegurar gas para el Browser Crank auto-payout.</td>
 </tr>
 <tr>
   <td>③ Ejecución on-chain</td>
@@ -562,8 +562,8 @@ footer strong{color:var(--text2);font-weight:500}
   <div class="step">
     <div class="step-n">3b</div>
     <div>
-      <h4>Ganador CEX → <code>push_prize</code></h4>
-      <p>Si la posición fue comprada vía CEX (Burner Wallet), el ganador no tiene wallet conectada para firmar. La instrucción <code>push_prize</code> en el contrato Anchor <em>no requiere la firma del ganador</em> — cualquier tercero (creador, operador) puede ser el <code>initiator</code> y empujar el premio a la dirección <code>pos.owner</code>. La función <code>pushPrizeOnChain</code> está disponible en <code>programClient.js</code>. <strong>Actualmente no hay botón en la UI para esto</strong> — es una mejora futura o el creador lo ejecuta manualmente.</p>
+      <h4>Ganador CEX → <code>push_prize</code> (Automático)</h4>
+      <p>Si la posición fue comprada vía CEX, el sistema usa el <strong>Browser Crank</strong>. El Burner Wallet retiene 0.005 SOL de gas. En cuanto el ganador (o cualquier usuario) visita la web tras el deadline, el navegador detecta el premio y llama a <code>push_prize</code> automáticamente. El ganador recibe el premio sin haber tenido que conectar una wallet ni firmar nada.</p>
     </div>
   </div>
   <div class="step">
@@ -763,8 +763,9 @@ footer strong{color:var(--text2);font-weight:500}
 <tbody>
 <tr><td><code>TREASURY_FEE_PCT</code></td><td>2</td><td>% de cada compra de posición que va a la tesorería del proyecto. Coincide con <code>TREASURY_BPS = 200</code> en el Rust.</td></tr>
 <tr><td><code>TOKENS_PER_SOL</code></td><td>1 000 000</td><td>Ratio de distribución de tokens. 1 SOL de precio = 1M tokens por posición.</td></tr>
-<tr><td><code>CEX_FEE_BUFFER_SOL</code></td><td>0.001</td><td>Buffer extra que se pide al usuario CEX sobre el precio de la posición. Cubre fee del exchange + fees de red Solana. Ej: si precio = 0.0200 SOL, el usuario envía 0.0210 SOL.</td></tr>
-<tr><td><code>CEX_MIN_REFUND_LAMPORTS</code></td><td>10 000</td><td>Umbral mínimo de reembolso (~0.00001 SOL). Si el sobrante es menor, no se genera TX adicional de devolución.</td></tr>
+<tr><td><code>CEX_FEE_BUFFER_SOL</code></td><td>0.010</td><td>Buffer extra solicitado al usuario CEX. Cubre comisiones de exchange y gas de red para compra y sorteo automático.</td></tr>
+<tr><td><code>CEX_CRANK_RESERVE_SOL</code></td><td>0.005</td><td>SOL que se queda en el Burner Wallet tras la compra para actuar como "gas" para el auto-sorteo posterior.</td></tr>
+<tr><td><code>CEX_MIN_REFUND_LAMPORTS</code></td><td>10 000</td><td>Umbral mínimo de reembolso (~0.00001 SOL). Si el sobrante es menor, no se genera TX de devolución.</td></tr>
 <tr><td><code>SOL_PRICE_USDC</code></td><td>Live</td><td>Precio SOL en USD. Se actualiza cada 60 s desde la API de Binance (<code>SOLUSDT</code>). Fallback: 145 USD.</td></tr>
 <tr><td><code>WATCHER_URL</code></td><td><code>/watcher</code></td><td>Exportada por compatibilidad histórica. No se usa actualmente en ningún componente — el flujo CEX es 100% client-side. El proxy de Vite en <code>vite.config.js</code> devuelve 503 JSON si nada escucha en el puerto 3001.</td></tr>
 </tbody>

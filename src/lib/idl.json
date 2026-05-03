@@ -200,6 +200,32 @@
       "args": []
     },
     {
+      "name": "pushPrize",
+      "accounts": [
+        {
+          "name": "campaign",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "winner",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "initiator",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "systemProgram",
+          "isMut": false,
+          "isSigner": false
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "routeNoWinnerToTreasury",
       "accounts": [
         {

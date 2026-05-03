@@ -8,10 +8,11 @@ import {
   resolveCampaignOnChain, claimPrizeOnChain, routeToTreasuryOnChain,
   campaignAccountToDisplay, getProgram, fetchProject,
   fmtPos, posStatus, totalPot, timeLeft, isExpired,
+  pushPrizeOnChain,
 } from "../lib/programClient.js";
 import { Keypair } from "@solana/web3.js";
 import { AnchorProvider } from "@coral-xyz/anchor";
-import { toUSDC, TOKENS_PER_SOL, TREASURY_FEE_PCT, BCF_PROGRAM_ID, WATCHER_URL, CEX_FEE_BUFFER_SOL, CEX_MIN_REFUND_LAMPORTS, IS_MAINNET, NETWORK } from "../lib/constants.js";
+import { toUSDC, TOKENS_PER_SOL, TREASURY_FEE_PCT, BCF_PROGRAM_ID, WATCHER_URL, CEX_FEE_BUFFER_SOL, CEX_MIN_GAS_SOL, CEX_CRANK_RESERVE_SOL, CEX_MIN_REFUND_LAMPORTS, IS_MAINNET, NETWORK } from "../lib/constants.js";
 import { shortAddr, explorerTx, getSOLBalance, requestAirdrop } from "../lib/solana.js";
 import { bagsTokenUrl } from "../lib/bags.js";
 import { useToast } from "../components/Toast.jsx";
@@ -95,6 +96,109 @@ function useCopy() {
     setCopied(key); setTimeout(() => setCopied(""), 2200);
   };
   return [copied, copy];
+}
+
+// ─── Browser Crank: Automatic Resolution & Payouts ────────────────────────────
+/**
+ * Automatically checks for expired campaigns or stuck prizes and processes them
+ * using either the connected wallet (if creator) or stored Burner Wallets (if gas exists).
+ */
+function useBrowserCrank(campaign, connection, anchorWallet, toast, setCampaign) {
+  useEffect(() => {
+    if (!campaign || campaign.status === 'pending') return;
+
+    const runCrank = async () => {
+      try {
+        const now = Date.now();
+        const provider = anchorWallet ? new AnchorProvider(connection, anchorWallet, { commitment: "confirmed" }) : null;
+        const isCreator = anchorWallet && anchorWallet.publicKey.toBase58() === campaign.creatorWallet;
+
+        // 1. AUTO-RESOLVE: Deadline passed but still active
+        if (campaign.status === 'active' && campaign.deadline && now > campaign.deadline) {
+          console.log('[Crank] Campaign expired. Attempting auto-resolve...');
+          
+          // Try with connected creator wallet first
+          if (isCreator && provider) {
+            const { account } = await resolveCampaignOnChain(provider, { campaignPDA: campaign.pda });
+            const updated = campaignAccountToDisplay(campaign.pda, account);
+            setCampaign(updated);
+            toast("🎲 Round resolved automatically!", "success");
+            return;
+          }
+
+          // Fallback: Try with ANY stored Burner Wallet for this campaign
+          for (let i = 0; i < 100; i++) {
+            const key = `bcf_burner_${campaign.pda}_${i}`;
+            const stored = localStorage.getItem(key);
+            if (stored) {
+              const kp = Keypair.fromSecretKey(new Uint8Array(JSON.parse(stored)));
+              const bal = await connection.getBalance(kp.publicKey);
+              if (bal >= 1000000) { // Need at least ~0.001 SOL to be safe
+                const mockWallet = { 
+                  publicKey: kp.publicKey, 
+                  signTransaction: async(tx)=>{tx.sign(kp); return tx;},
+                  signAllTransactions: async(txs)=>{txs.forEach(t=>t.sign(kp)); return txs;}
+                };
+                const burnerProvider = new AnchorProvider(connection, mockWallet, { commitment: "confirmed" });
+                const { account } = await resolveCampaignOnChain(burnerProvider, { campaignPDA: campaign.pda });
+                const updated = campaignAccountToDisplay(campaign.pda, account);
+                setCampaign(updated);
+                toast("🎲 Round resolved automatically via Burner Wallet!", "success");
+                return;
+              }
+            }
+          }
+        }
+
+        // 2. AUTO-PAYOUT: Settled with winner but funds still in PDA
+        if (campaign.status === 'settled' && campaign.hasWinner && !campaign.claimed) {
+          console.log('[Crank] Prize stuck. Attempting auto-payout...');
+
+          const winnerAddr = campaign.winnerWallet;
+          if (!winnerAddr) return;
+
+          // Try with connected creator wallet
+          if (isCreator && provider) {
+             await pushPrizeOnChain(provider, { campaignPDA: campaign.pda, winnerAddr });
+             toast("💸 Prize pushed to winner automatically!", "success");
+             // Refresh campaign state
+             const updatedAccount = await fetchCampaign(provider, campaign.pda);
+             setCampaign(campaignAccountToDisplay(campaign.pda, updatedAccount));
+             return;
+          }
+
+          // Fallback: Try with Burner Wallets
+          for (let i = 0; i < 100; i++) {
+            const key = `bcf_burner_${campaign.pda}_${i}`;
+            const stored = localStorage.getItem(key);
+            if (stored) {
+              const kp = Keypair.fromSecretKey(new Uint8Array(JSON.parse(stored)));
+              const bal = await connection.getBalance(kp.publicKey);
+              if (bal >= 1000000) {
+                const mockWallet = { 
+                  publicKey: kp.publicKey, 
+                  signTransaction: async(tx)=>{tx.sign(kp); return tx;},
+                  signAllTransactions: async(txs)=>{txs.forEach(t=>t.sign(kp)); return txs;}
+                };
+                const burnerProvider = new AnchorProvider(connection, mockWallet, { commitment: "confirmed" });
+                await pushPrizeOnChain(burnerProvider, { campaignPDA: campaign.pda, winnerAddr });
+                toast("💸 Prize pushed to winner automatically via Burner!", "success");
+                const updatedAccount = await fetchCampaign(burnerProvider, campaign.pda);
+                setCampaign(campaignAccountToDisplay(campaign.pda, updatedAccount));
+                return;
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('[Crank] Background process error:', err.message || err);
+      }
+    };
+
+    const interval = setInterval(runCrank, 10000); // Check every 10s
+    runCrank(); // Run once on mount
+    return () => clearInterval(interval);
+  }, [campaign, connection, anchorWallet, toast, setCampaign]);
 }
 
 // ─── DEPOSIT MODAL — Creator deposits prize to activate ───────────────────────
@@ -456,13 +560,24 @@ function BurnerCEXTab({ campaign, positionIndex, price, lamports, connection, to
     }
   }, [recipientAddr, campaign.pda, positionIndex]);
 
-  // Cleanup Burner Wallet on success
+  // Cleanup Burner Wallet only if it has been fully used/refunded and has NO crank reserve
   useEffect(() => {
     if (swept || refundPending) {
-      const key = `bcf_burner_${campaign.pda}_${positionIndex}`;
-      localStorage.removeItem(key);
+      const checkAndCleanup = async () => {
+        if (!burnerKeypair) return;
+        try {
+          const bal = await connection.getBalance(burnerKeypair.publicKey);
+          // If balance is below the Crank reserve, we can safely delete it.
+          // Otherwise, we keep it in localStorage so it can act as a Crank later.
+          if (bal < (CEX_CRANK_RESERVE_SOL * 0.9 * 1e9)) {
+            const key = `bcf_burner_${campaign.pda}_${positionIndex}`;
+            localStorage.removeItem(key);
+          }
+        } catch (e) { console.warn("Cleanup check failed", e); }
+      };
+      checkAndCleanup();
     }
-  }, [swept, refundPending, campaign.pda, positionIndex]);
+  }, [swept, refundPending, campaign.pda, positionIndex, burnerKeypair, connection]);
 
   // Poll every 5s while polling=true
   useEffect(() => {
@@ -511,14 +626,17 @@ function BurnerCEXTab({ campaign, positionIndex, price, lamports, connection, to
       
       setVaultBalance(totalReceived);
       
-      // We need at least the price + CEX buffer (covers exchange fee + Solana TX fees)
-      const requiredLamports = lamports + Math.floor(CEX_FEE_BUFFER_SOL * LAMPORTS_PER_SOL);
+      // Validation logic:
+      // - Target: price + buffer (0.01 SOL) -> what we want
+      // - Minimum: price + gas_margin (0.001 SOL) -> what we accept to proceed
+      const targetLamports  = lamports + Math.floor(CEX_FEE_BUFFER_SOL * LAMPORTS_PER_SOL);
+      const minimumLamports = lamports + Math.floor(CEX_MIN_GAS_SOL * LAMPORTS_PER_SOL);
 
-      if (totalReceived >= requiredLamports) {
+      if (totalReceived >= minimumLamports) {
         validDeposit = true;
-      } else if (totalReceived > 0 && totalReceived < requiredLamports) {
+      } else if (totalReceived > 0 && totalReceived < minimumLamports) {
         // Partial payment detected — notify user but keep polling
-        const shortfall = ((requiredLamports - totalReceived) / 1e9).toFixed(4);
+        const shortfall = ((targetLamports - totalReceived) / 1e9).toFixed(4);
         setAutoStatus(`⚠️ Received ${(totalReceived/1e9).toFixed(4)} SOL — need ${shortfall} more SOL`);
       }
 
@@ -575,21 +693,25 @@ function BurnerCEXTab({ campaign, positionIndex, price, lamports, connection, to
       });
 
       // Refund remaining balance (change) if it exceeds the minimum refund threshold
+      // Refund remaining balance (change) while retaining the Crank Reserve
       try {
         const bal = await connection.getBalance(bPub);
-        // Reserve ~5000 lamports for the TX fee of the refund itself
-        const refundable = bal - 5000;
+        const reserve = Math.floor(CEX_CRANK_RESERVE_SOL * LAMPORTS_PER_SOL);
+        // Reserve 5000 lamports for the refund TX fee itself, plus the Crank Reserve
+        const refundable = bal - 5000 - reserve;
+
         if (refundable > CEX_MIN_REFUND_LAMPORTS) {
-           // Worth sending back — full change refund
+           // Worth sending back — partial refund (leaving the reserve for auto-crank)
            const refundTx = new Transaction().add(SystemProgram.transfer({ fromPubkey: bPub, toPubkey: new PublicKey(recipientAddr), lamports: refundable }));
            refundTx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
            refundTx.feePayer = bPub;
            refundTx.sign(burnerKeypair);
            await connection.sendRawTransaction(refundTx.serialize());
            const changeSOL = (refundable / 1e9).toFixed(6);
-           toast(`💸 Change of ${changeSOL} SOL refunded to your address.`, 'info');
+           toast(`💸 Change of ${changeSOL} SOL refunded. Retaining gas for auto-payout.`, 'info');
+        } else {
+           toast(`✅ Position secured! Retaining remaining SOL for auto-payout gas.`, 'info');
         }
-        // If refundable <= CEX_MIN_REFUND_LAMPORTS the dust stays in burner (cheaper than TX fee)
       } catch (e) { console.warn("Change refund failed", e); }
 
       sweptRef.current = true;
@@ -644,7 +766,7 @@ function BurnerCEXTab({ campaign, positionIndex, price, lamports, connection, to
     await checkStatus();
   }
 
-  const requiredSOL = (price + CEX_FEE_BUFFER_SOL).toFixed(4); // e.g. 0.0210 when price=0.0200
+  const totalRequiredSOL = (price + CEX_FEE_BUFFER_SOL).toFixed(4); // e.g. 0.0210 when price=0.0200
   const vaultReady = vaultBalance >= (lamports + Math.floor(CEX_FEE_BUFFER_SOL * LAMPORTS_PER_SOL));
   const currentStep = swept ? 4 : vaultReady ? 3 : burnerKeypair ? 2 : 1;
   const vaultAddress = burnerKeypair?.publicKey.toBase58();
@@ -729,8 +851,9 @@ function BurnerCEXTab({ campaign, positionIndex, price, lamports, connection, to
           </div>
           <div style={{ marginTop:'6px', padding:'10px 13px', background:'rgba(251,191,36,.05)', border:'1px solid rgba(251,191,36,.2)', borderRadius:'var(--r)', fontSize:'.73rem', lineHeight:1.65, color:'var(--text2)' }}>
             <span style={{ color:'var(--amber)', fontWeight:700 }}>💸 Please send:</span><br/>
-            • Exact amount needed: <strong style={{ fontFamily:'var(--mono)', color:'var(--accent)' }}>{requiredSOL} SOL</strong> (includes 0.001 SOL buffer for exchange & network fees)<br/>
-            <span style={{ color:'var(--text3)', fontSize:'.69rem' }}>✅ No memo required. Any excess SOL will be refunded back to your address automatically. Please keep this tab open.</span>
+            • Send exactly: <strong style={{ fontFamily:'var(--mono)', color:'var(--accent)' }}>{(lamports/1e9 + CEX_FEE_BUFFER_SOL).toFixed(4)} SOL</strong><br/>
+            • Includes <strong style={{ color:'var(--text)' }}>0.0100 SOL</strong> safe buffer for exchange fees & auto-payout gas.<br/>
+            • <strong>Zero-Touch:</strong> Once you pay, the system will automatically resolve and send your prize if you win.
           </div>
         </div>
       )}
@@ -758,7 +881,7 @@ function BurnerCEXTab({ campaign, positionIndex, price, lamports, connection, to
               <div style={{ fontSize:'.72rem', color:'var(--text3)', lineHeight: 1.3 }}>
                 {vaultReady
                   ? 'Do not close this window — transaction in progress'
-                  : `Currently: ${(vaultBalance / 1e9).toFixed(4)} / ${requiredSOL} SOL`}
+                  : `Currently: ${(vaultBalance / 1e9).toFixed(4)} / ${totalRequiredSOL} SOL`}
               </div>
             </div>
             {lastChecked && (
@@ -805,6 +928,9 @@ export default function CampaignPage() {
   // Live countdown
   const [, tick] = useState(0);
   useEffect(() => { const t = setInterval(()=>tick(n=>n+1), 1000); return ()=>clearInterval(t); }, []);
+
+  // Serverless Auto-Crank (Background process for Resolve & Payout)
+  useBrowserCrank(campaign, connection, anchorWallet, toast, setCampaign);
 
   useEffect(() => {
     async function load() {
