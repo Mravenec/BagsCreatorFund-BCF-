@@ -506,6 +506,64 @@ footer strong{color:var(--text2);font-weight:500}
   </div>
 </div>
 
+<div class="diagram" style="margin-top:24px">
+  <svg viewBox="0 0 860 300" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <marker id="ar-w" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+        <path d="M2 1L8 5L2 9" fill="none" stroke="#34d399" stroke-width="1.5"/>
+      </marker>
+      <marker id="ar-c" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+        <path d="M2 1L8 5L2 9" fill="none" stroke="#fbbf24" stroke-width="1.5"/>
+      </marker>
+    </defs>
+    
+    <!-- MODO WALLET -->
+    <text x="20" y="25" fill="#34d399" font-family="'Space Mono'" font-size="10" font-weight="700">MODO WALLET (Directo)</text>
+    <rect x="20" y="40" width="140" height="40" rx="6" fill="#081918" stroke="#0c5445" stroke-width="1"/>
+    <text x="90" y="65" text-anchor="middle" fill="#34d399" font-family="'DM Sans'" font-size="9">Click Posición</text>
+    
+    <line x1="160" y1="60" x2="200" y2="60" stroke="#0c5445" stroke-width="1" marker-end="url(#ar-w)"/>
+    
+    <rect x="200" y="40" width="160" height="40" rx="6" fill="#081918" stroke="#0c5445" stroke-width="1"/>
+    <text x="280" y="65" text-anchor="middle" fill="#34d399" font-family="'DM Sans'" font-size="9">Wallet Firma TX</text>
+    
+    <line x1="360" y1="60" x2="400" y2="60" stroke="#0c5445" stroke-width="1" marker-end="url(#ar-w)"/>
+    
+    <rect x="400" y="40" width="180" height="40" rx="6" fill="#141428" stroke="#2a2a4a" stroke-width="1"/>
+    <text x="490" y="65" text-anchor="middle" fill="#eeedf8" font-family="'Space Mono'" font-size="9">buy_position</text>
+    
+    <line x1="580" y1="60" x2="620" y2="60" stroke="#0c5445" stroke-width="1" marker-end="url(#ar-w)"/>
+    
+    <rect x="620" y="40" width="180" height="40" rx="6" fill="#081918" stroke="#0c5445" stroke-width="1"/>
+    <text x="710" y="65" text-anchor="middle" fill="#34d399" font-family="'DM Sans'" font-size="9">owner = wallet_pubkey</text>
+
+    <!-- MODO CEX -->
+    <text x="20" y="145" fill="#fbbf24" font-family="'Space Mono'" font-size="10" font-weight="700">MODO CEX (Burner Wallet)</text>
+    
+    <rect x="20" y="160" width="140" height="40" rx="6" fill="#1a1008" stroke="#7a5c0a" stroke-width="1"/>
+    <text x="90" y="185" text-anchor="middle" fill="#fbbf24" font-family="'DM Sans'" font-size="9">Input Recipient</text>
+    
+    <line x1="160" y1="180" x2="200" y2="180" stroke="#7a5c0a" stroke-width="1" marker-end="url(#ar-c)"/>
+    
+    <rect x="200" y="160" width="160" height="40" rx="6" fill="#1a1008" stroke="#7a5c0a" stroke-width="1"/>
+    <text x="280" y="185" text-anchor="middle" fill="#fbbf24" font-family="'DM Sans'" font-size="9">Burner Generado</text>
+    
+    <line x1="360" y1="180" x2="400" y2="180" stroke="#7a5c0a" stroke-width="1" marker-end="url(#ar-c)"/>
+    
+    <rect x="400" y="160" width="160" height="40" rx="6" fill="#0e0e1c" stroke="#2a2a4a" stroke-width="1"/>
+    <text x="480" y="185" text-anchor="middle" fill="#9896b8" font-family="'DM Sans'" font-size="9">Polling Pago (RPC)</text>
+    
+    <line x1="560" y1="180" x2="600" y2="180" stroke="#7a5c0a" stroke-width="1" marker-end="url(#ar-c)"/>
+    
+    <rect x="600" y="160" width="220" height="60" rx="6" fill="#1a1008" stroke="#7a5c0a" stroke-width="1"/>
+    <text x="710" y="185" text-anchor="middle" fill="#fbbf24" font-family="'DM Sans'" font-size="9">Burner Firma buy_position</text>
+    <text x="710" y="202" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">Sobrante → Refund + Crank Gas</text>
+    
+    <path d="M710 220 Q710 270 480 270 L90 270 Q20 270 20 220" fill="none" stroke="#4f4d70" stroke-width="1" stroke-dasharray="4 4"/>
+    <text x="365" y="265" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">owner = recipient_addr (on-chain)</text>
+  </svg>
+</div>
+
 <h3 style="margin-top:28px;margin-bottom:14px">Flujo detallado — Modo CEX (BurnerCEXTab)</h3>
 
 <div class="steps">
@@ -617,13 +675,13 @@ footer strong{color:var(--text2);font-weight:500}
 <text x="340" y="145" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">hasWinner=true AND !claimed</text>
 <line x1="440" y1="136" x2="476" y2="136" stroke="#4f4d70" stroke-width="1" marker-end="url(#ac)"/>
 
-<!-- Auto Push box -->
-<rect x="476" y="110" width="360" height="84" rx="8" fill="#14052e" stroke="#6d28d9" stroke-width="1"/>
-<text x="656" y="129" text-anchor="middle" fill="#8b5cf6" font-family="'Space Mono'" font-size="9" font-weight="700">AUTO-PAYOUT (push_prize)</text>
-<text x="656" y="144" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">1. Extrae winnerAddr de campaign.winnerWallet</text>
-<text x="656" y="158" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">2. ¿Wallet conectada = creator? → firma push_prize</text>
-<text x="656" y="172" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">3. Sino: busca burner con ≥ 0.001 SOL → firma automáticamente</text>
-<text x="656" y="185" text-anchor="middle" fill="#8b5cf6" font-family="'DM Sans'" font-size="8" font-weight="600">→ ganador CEX recibe premio sin firmar nada</text>
+<rect x="476" y="110" width="360" height="96" rx="8" fill="#14052e" stroke="#6d28d9" stroke-width="1"/>
+<text x="656" y="127" text-anchor="middle" fill="#8b5cf6" font-family="'Space Mono'" font-size="9" font-weight="700">AUTO-PAYOUT (push_prize / claim_prize)</text>
+<text x="656" y="141" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">1. ¿Wallet conectada = winner? → AUTO-CLAIM inmediato</text>
+<text x="656" y="154" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">2. ¿Wallet conectada = creator? → AUTO-PUSH al ganador</text>
+<text x="656" y="167" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">3. Sino: busca burner con ≥ 0.001 SOL → firma push automáticamente</text>
+<text x="656" y="180" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">4. Se detecta el fin al quedar los premios en 0 SOL (Claimed)</text>
+<text x="656" y="193" text-anchor="middle" fill="#8b5cf6" font-family="'DM Sans'" font-size="8" font-weight="600">→ experiencia 100% autónoma (Zero-Touch)</text>
 
 <!-- Burner Wallet store -->
 <rect x="20" y="210" width="200" height="68" rx="8" fill="rgba(251,191,36,.06)" stroke="rgba(251,191,36,.2)" stroke-width="1"/>
@@ -641,7 +699,7 @@ footer strong{color:var(--text2);font-weight:500}
 <tr><td>Frecuencia de ejecución</td><td>Cada 10 segundos mientras el usuario está en la Campaign Page. También se ejecuta una vez al montar el componente (sin esperar los 10s).</td></tr>
 <tr><td>Condición Auto-Resolve</td><td><code>campaign.status === 'active'</code> AND <code>Date.now() &gt; campaign.deadline</code>. No se activa si la campaña está pending.</td></tr>
 <tr><td>Condición Auto-Payout</td><td><code>campaign.status === 'settled'</code> AND <code>campaign.hasWinner === true</code> AND <code>!campaign.claimed</code>.</td></tr>
-<tr><td>Prioridad de firmante</td><td>1. Wallet conectada del creador (si es el creator). 2. Cualquier Burner Wallet almacenado en localStorage para esa campaña que tenga ≥ 0.001 SOL. Los burners se buscan de posición 0 a 99 en orden.</td></tr>
+<tr><td>Prioridad de firmante</td><td><strong>1. Wallet del Ganador:</strong> Si el ganador entra, el sistema dispara el reclamo (auto-claim). <strong>2. Wallet del Creador:</strong> Si el creador entra, el sistema empuja el premio al ganador (auto-push). <strong>3. Burner Wallets:</strong> Si entra un visitante y hay un burner con gas (≥ 0.001 SOL), el sistema empuja el premio.</td></tr>
 <tr><td>Crank Reserve</td><td>El flujo CEX retiene 0.005 SOL en el Burner Wallet post-compra. Este SOL es el "combustible" que permite al Browser Crank ejecutar <code>resolve_campaign</code> y/o <code>push_prize</code> automáticamente cuando alguien visita la página.</td></tr>
 <tr><td>Limpieza del Burner</td><td>Tras la compra exitosa (o reembolso), el Burner solo se elimina del localStorage si su balance cae por debajo del 90% del crank reserve. Si aún tiene gas, se conserva para actuar como Crank.</td></tr>
 <tr><td>Errores silenciosos</td><td>Todos los errores en el crank se capturan con <code>try-catch</code> y se loggean solo en consola (<code>console.warn</code>). No bloquean la UI ni muestran toasts de error al usuario.</td></tr>
@@ -850,6 +908,10 @@ footer strong{color:var(--text2);font-weight:500}
 <span class="n">Nivel 4</span>: Sin fechas → alfabético por title/name (Orden Natural)
 <br/>
 <span class="v">Dashboard Priority</span>: En campañas completadas, las que no tienen ganador y tienen premio pendiente (<code>prizeSOL > 0</code>) se anclan arriba. El resto se ordenan por <strong>recencia (más recientes primero)</strong> para ver la actividad más reciente de inmediato.
+<br/>
+<span class="v">Transparencia de Premios</span>: El banner de campaña finalizada desglosa el <strong>Premio Base</strong> y lo <strong>Recaudado por Posiciones</strong>.
+<br/>
+<span class="v">Verificación On-Chain</span>: Se incluyen enlaces directos a <strong>Solana Explorer</strong> para auditar el Hash del Bloque, la cuenta PDA de la Campaña y el Wallet del Ganador.
 </div>
 </div>
 

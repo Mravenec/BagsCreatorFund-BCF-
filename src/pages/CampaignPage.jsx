@@ -13,7 +13,7 @@ import {
 import { Keypair } from "@solana/web3.js";
 import { AnchorProvider } from "@coral-xyz/anchor";
 import { toUSDC, TOKENS_PER_SOL, TREASURY_FEE_PCT, BCF_PROGRAM_ID, WATCHER_URL, CEX_FEE_BUFFER_SOL, CEX_MIN_GAS_SOL, CEX_CRANK_RESERVE_SOL, CEX_MIN_REFUND_LAMPORTS, IS_MAINNET, NETWORK } from "../lib/constants.js";
-import { shortAddr, explorerTx, getSOLBalance, requestAirdrop } from "../lib/solana.js";
+import { shortAddr, explorerTx, explorerAddr, explorerBlock, getSOLBalance, requestAirdrop } from "../lib/solana.js";
 import { bagsTokenUrl } from "../lib/bags.js";
 import { useToast } from "../components/Toast.jsx";
 import { getToken } from "../lib/store.js";
@@ -112,6 +112,7 @@ function useBrowserCrank(campaign, connection, anchorWallet, toast, setCampaign)
         const now = Date.now();
         const provider = anchorWallet ? new AnchorProvider(connection, anchorWallet, { commitment: "confirmed" }) : null;
         const isCreator = anchorWallet && anchorWallet.publicKey.toBase58() === campaign.creatorWallet;
+        const isWinner  = anchorWallet && anchorWallet.publicKey.toBase58() === campaign.winnerWallet;
 
         // 1. AUTO-RESOLVE: Deadline passed but still active
         if (campaign.status === 'active' && campaign.deadline && now > campaign.deadline) {
@@ -157,8 +158,16 @@ function useBrowserCrank(campaign, connection, anchorWallet, toast, setCampaign)
           const winnerAddr = campaign.winnerWallet;
           if (!winnerAddr) return;
 
-          // Try with connected creator wallet
+          // 1. Try with connected Winner wallet (Auto-Claim)
+          if (isWinner && provider) {
+             console.log('[Crank] Winner connected. Triggering auto-claim...');
+             await handleClaim(); // This refreshes campaign state internally
+             return;
+          }
+
+          // 2. Try with connected Creator wallet (Auto-Push)
           if (isCreator && provider) {
+             console.log('[Crank] Creator connected. Triggering auto-push...');
              await pushPrizeOnChain(provider, { campaignPDA: campaign.pda, winnerAddr });
              toast("💸 Prize pushed to winner automatically!", "success");
              // Refresh campaign state
@@ -1089,7 +1098,6 @@ export default function CampaignPage() {
           onSuccess={c=>{setCampaign(c); if(c.tokenMint) setToken(getToken(c.tokenMint));}} />
       )}
 
-      {/* Settled banner */}
       {isSettled && (
         <div style={{ background:campaign.winnerWallet?"rgba(56,189,248,.04)":"rgba(52,211,153,.04)", borderBottom:`2px solid ${campaign.winnerWallet?"var(--accent)":"var(--green)"}`, padding:"28px 48px", textAlign:"center" }}>
           <div style={{ maxWidth:"760px", margin:"0 auto" }}>
@@ -1097,29 +1105,94 @@ export default function CampaignPage() {
             <h2 style={{ fontWeight:700, fontSize:"1.4rem", marginBottom:"12px", letterSpacing:"-.02em" }}>
               {campaign.winnerWallet ? "We have a winner!" : "No winner — funds go to treasury"}
             </h2>
-            <div style={{ display:"flex", justifyContent:"center", alignItems:"center", gap:"20px", flexWrap:"wrap", marginBottom:"10px" }}>
-              <div style={{ display:"flex", alignItems:"center", gap:"8px" }}>
-                <span style={{ fontSize:".82rem", color:"var(--text3)" }}>Winning position:</span>
-                <span style={{ fontFamily:"var(--mono)", fontSize:"1.5rem", fontWeight:700, color:"var(--accent)", background:"var(--bg2)", padding:"4px 14px", borderRadius:"8px" }}>#{fmtPos(campaign.winningPosition)}</span>
-              </div>
-              {campaign.winnerWallet && (
-                <div style={{ display:"flex", alignItems:"center", gap:"6px" }}>
-                  <span style={{ fontSize:".82rem", color:"var(--text3)" }}>Winner:</span>
-                  <span style={{ fontFamily:"var(--mono)", color:"var(--green)", fontWeight:600 }}>{shortAddr(campaign.winnerWallet, 6)}</span>
+            
+            {campaign.winnerWallet ? (
+              <div style={{ marginBottom:"16px" }}>
+                <div style={{ display:"flex", justifyContent:"center", alignItems:"center", gap:"20px", flexWrap:"wrap", marginBottom:"12px" }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:"8px" }}>
+                    <span style={{ fontSize:".82rem", color:"var(--text3)" }}>Winning position:</span>
+                    <a href={explorerAddr(campaign.pda)} target="_blank" rel="noopener noreferrer" style={{ textDecoration:"none" }}>
+                      <span style={{ fontFamily:"var(--mono)", fontSize:"1.5rem", fontWeight:700, color:"var(--accent)", background:"var(--bg2)", padding:"4px 14px", borderRadius:"8px", cursor:"pointer" }} title="View Campaign on Explorer">
+                        #{fmtPos(campaign.winningPosition)}
+                      </span>
+                    </a>
+                  </div>
+                  <div style={{ display:"flex", alignItems:"center", gap:"6px" }}>
+                    <span style={{ fontSize:".82rem", color:"var(--text3)" }}>Winner:</span>
+                    <a href={explorerAddr(campaign.winnerWallet)} target="_blank" rel="noopener noreferrer" style={{ fontFamily:"var(--mono)", color:"var(--green)", fontWeight:600, textDecoration:"none" }} title="View Winner on Explorer">
+                      {shortAddr(campaign.winnerWallet, 6)}
+                    </a>
+                    <button 
+                      onClick={() => { navigator.clipboard.writeText(campaign.winnerWallet); toast("Address copied!", "success"); }}
+                      style={{ background:"none", border:"none", color:"var(--text3)", cursor:"pointer", fontSize:".8rem", padding:"2px" }}
+                      title="Copy full address"
+                    >
+                      📋
+                    </button>
+                  </div>
                 </div>
-              )}
-              <div style={{ display:"flex", alignItems:"center", gap:"6px" }}>
-                <span style={{ fontSize:".82rem", color:"var(--text3)" }}>
-                  {campaign.winnerWallet?"Prize paid:":"Added to treasury:"}
-                </span>
-                <span style={{ fontFamily:"var(--mono)", fontWeight:700, color: campaign.winnerWallet?"var(--accent)":"var(--green)" }}>
-                  {(campaign.totalPayout||pot).toFixed(3)} SOL (≈${toUSDC(campaign.totalPayout||pot)})
-                </span>
+
+                <div style={{ 
+                  padding:"16px", 
+                  background:"linear-gradient(135deg, rgba(56,189,248,.1) 0%, rgba(56,189,248,.05) 100%)", 
+                  border:"1px solid rgba(56,189,248,.3)", 
+                  borderRadius:"8px", 
+                  marginBottom:"12px" 
+                }}>
+                  <div style={{ fontSize:"1.1rem", fontWeight:700, color:"var(--accent)", marginBottom:"8px", display:"flex", alignItems:"center", justifyContent:"center", gap:"8px" }}>
+                    🏆 Prize Won: {(campaign.totalPayout||pot).toFixed(3)} SOL (≈${toUSDC(campaign.totalPayout||pot)})
+                  </div>
+                  
+                  <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(140px, 1fr))", gap:"12px", fontSize:".75rem" }}>
+                    <div style={{ textAlign:"center", padding:"8px", background:"var(--bg2)", borderRadius:"4px" }}>
+                      <div style={{ color:"var(--text3)", marginBottom:"2px" }}>Base Prize</div>
+                      <div style={{ fontFamily:"var(--mono)", color:"var(--text)", fontWeight:600 }}>
+                        {campaign.prizeSOL?.toFixed(3)} SOL
+                      </div>
+                    </div>
+                    <div style={{ textAlign:"center", padding:"8px", background:"var(--bg2)", borderRadius:"4px" }}>
+                      <div style={{ color:"var(--text3)", marginBottom:"2px" }}>From Positions</div>
+                      <div style={{ fontFamily:"var(--mono)", color:"var(--text)", fontWeight:600 }}>
+                        {campaign.totalCollectedSOL?.toFixed(3)} SOL
+                      </div>
+                    </div>
+                    <div style={{ textAlign:"center", padding:"8px", background:"rgba(56,189,248,.1)", borderRadius:"4px" }}>
+                      <div style={{ color:"var(--text3)", marginBottom:"2px" }}>Total Payout</div>
+                      <div style={{ fontFamily:"var(--mono)", color:"var(--accent)", fontWeight:700 }}>
+                        {(campaign.totalPayout||pot).toFixed(3)} SOL
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ fontSize:".7rem", color:"var(--text3)", fontFamily:"var(--mono)", wordBreak:"break-all", background:"var(--bg2)", padding:"8px", borderRadius:"4px", border:"1px solid var(--border2)", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                  <span>Winner address: {campaign.winnerWallet}</span>
+                  <a href={explorerAddr(campaign.winnerWallet)} target="_blank" rel="noopener noreferrer" style={{ color:"var(--accent)", fontSize:".8rem", marginLeft:"8px" }} title="View on Solana Explorer">↗</a>
+                </div>
               </div>
-            </div>
+            ) : (
+              <div style={{ display:"flex", justifyContent:"center", alignItems:"center", gap:"20px", flexWrap:"wrap", marginBottom:"10px" }}>
+                <div style={{ display:"flex", alignItems:"center", gap:"8px" }}>
+                  <span style={{ fontSize:".82rem", color:"var(--text3)" }}>Winning position:</span>
+                  <a href={explorerAddr(campaign.pda)} target="_blank" rel="noopener noreferrer" style={{ textDecoration:"none" }}>
+                    <span style={{ fontFamily:"var(--mono)", fontSize:"1.5rem", fontWeight:700, color:"var(--accent)", background:"var(--bg2)", padding:"4px 14px", borderRadius:"8px", cursor:"pointer" }} title="View Campaign on Explorer">
+                      #{fmtPos(campaign.winningPosition)}
+                    </span>
+                  </a>
+                </div>
+                <div style={{ display:"flex", alignItems:"center", gap:"6px" }}>
+                  <span style={{ fontSize:".82rem", color:"var(--text3)" }}>Added to treasury:</span>
+                  <span style={{ fontFamily:"var(--mono)", fontWeight:700, color:"var(--green)" }}>
+                    {(campaign.totalPayout||pot).toFixed(3)} SOL (≈${toUSDC(campaign.totalPayout||pot)})
+                  </span>
+                </div>
+              </div>
+            )}
+
             {campaign.winningBlockHash && (
-              <div style={{ fontSize:".7rem", color:"var(--text3)", fontFamily:"var(--mono)" }}>
-                Block hash: {campaign.winningBlockHash.slice(0,32)}... (verifiable draw source)
+              <div style={{ fontSize:".7rem", color:"var(--text3)", fontFamily:"var(--mono)", display:"flex", alignItems:"center", justifyContent:"center", gap:"6px" }}>
+                Block hash: {campaign.winningBlockHash.slice(0,32)}...
+                <a href={explorerBlock(campaign.winningBlockHash)} target="_blank" rel="noopener noreferrer" style={{ color:"var(--accent)", fontSize:".8rem" }} title="Verify Block on Solana Explorer">↗</a>
               </div>
             )}
             {campaign.winnerWallet && myPositions.includes(campaign.winningPosition) && (
@@ -1250,7 +1323,12 @@ export default function CampaignPage() {
                   return (
                     <div key={i} className={cls} onClick={()=>canClick&&handlePosClick(i)}
                       title={isFilled?`${shortAddr(pos.owner)}`:canClick?`Participate for ${campaign.positionPriceSOL} SOL`:fmtPos(i)}>
-                      {fmtPos(i)}
+                      {isWinner ? (
+                        <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:"0px", height: "100%", justifyContent: "center" }}>
+                          <span style={{ fontSize: "1.1rem" }}>🏆</span>
+                          <span style={{ fontSize: ".55rem", fontWeight: 800, marginTop: "-2px" }}>{(campaign.totalPayout||pot).toFixed(2)}</span>
+                        </div>
+                      ) : fmtPos(i)}
                     </div>
                   );
                 })}

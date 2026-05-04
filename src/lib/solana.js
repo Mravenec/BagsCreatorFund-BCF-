@@ -9,8 +9,9 @@ export const connection = new Connection(RPC_URL, 'confirmed');
 
 // ─── Explorer links (network-aware) ──────────────────────────────────────────
 const cluster = IS_MAINNET ? '' : '?cluster=devnet';
-export const explorerTx   = (sig)  => `https://explorer.solana.com/tx/${sig}${cluster}`;
-export const explorerAddr = (addr) => `https://explorer.solana.com/address/${addr}${cluster}`;
+export const explorerTx    = (sig)  => `https://explorer.solana.com/tx/${sig}${cluster}`;
+export const explorerAddr  = (addr) => `https://explorer.solana.com/address/${addr}${cluster}`;
+export const explorerBlock = (hash) => `https://explorer.solana.com/block/${hash}${cluster}`;
 export const solscanTx    = (sig)  => IS_MAINNET
   ? `https://solscan.io/tx/${sig}`
   : `https://solscan.io/tx/${sig}?cluster=devnet`;
