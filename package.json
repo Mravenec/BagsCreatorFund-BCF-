@@ -1,7 +1,7 @@
 {
   "name": "bagscreator-fund",
   "version": "1.0.0",
-  "description": "BagsCreatorFund \u2014 On-chain creator funding rounds powered by Bags x Solana",
+  "description": "BagsCreatorFund — On-chain creator funding rounds powered by Bags x Solana",
   "private": true,
   "scripts": {
     "dev": "vite",
@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.29.0",
+    "@metamask/connect-solana": "^1.0.0",
     "@solana/wallet-adapter-base": "^0.9.23",
     "@solana/wallet-adapter-coinbase": "^0.1.13",
     "@solana/wallet-adapter-phantom": "^0.9.24",

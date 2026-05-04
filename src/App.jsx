@@ -6,8 +6,19 @@ import { PhantomWalletAdapter }  from '@solana/wallet-adapter-phantom';
 import { SolflareWalletAdapter } from '@solana/wallet-adapter-solflare';
 import { CoinbaseWalletAdapter } from '@solana/wallet-adapter-coinbase';
 import { TrustWalletAdapter }    from '@solana/wallet-adapter-trust';
+import { createSolanaClient }    from '@metamask/connect-solana';
 import { AnchorProvider }        from '@coral-xyz/anchor';
 import '@solana/wallet-adapter-react-ui/styles.css';
+
+// Initialize MetaMask Solana client (enables MetaMask Snap support)
+if (typeof window !== 'undefined') {
+  createSolanaClient({
+    dapp: {
+      name: 'Bags Creator Fund',
+      url: window.location.origin,
+    },
+  });
+}
 
 import { RPC_URL } from './lib/solana.js';
 import { BCF_PROGRAM_ID, NETWORK } from './lib/constants.js';

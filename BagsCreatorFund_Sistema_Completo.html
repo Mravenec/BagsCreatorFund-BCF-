@@ -102,6 +102,14 @@ footer{border-top:1px solid var(--border2);margin-top:80px;padding:36px 0 16px;
   display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:14px}
 footer span{font-size:.76rem;color:var(--text3)}
 footer strong{color:var(--text2);font-weight:500}
+.file-tree{background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r);
+  padding:16px 20px;font-family:var(--mono);font-size:.78rem;line-height:2;color:var(--text2);margin:14px 0}
+.file-tree .dir{color:var(--blue)}
+.file-tree .file{color:var(--text2)}
+.file-tree .comment{color:var(--text3)}
+.new-tag{display:inline;font-size:.65rem;font-weight:700;color:var(--green);
+  background:rgba(52,211,153,.12);border:1px solid rgba(52,211,153,.25);
+  padding:1px 6px;border-radius:4px;margin-left:6px;font-family:var(--mono)}
 </style>
 </head>
 <body>
@@ -124,6 +132,7 @@ footer strong{color:var(--text2);font-weight:500}
     <span class="chip">Solana DevNet &amp; Mainnet</span>
     <span class="chip tl">CEX sin memo · Burner Wallet</span>
     <span class="chip tl">Arquitectura Serverless $0</span>
+    <span class="chip">Browser Crank — Auto-resolve &amp; Push</span>
     <span class="chip">Phantom · Solflare · Coinbase · Trust</span>
     <span class="chip">v0.2.1 — deposit_to_treasury</span>
   </div>
@@ -156,53 +165,128 @@ footer strong{color:var(--text2);font-weight:500}
     <h3>CEX sin fricción</h3>
     <p>Usuarios de Binance, Coinbase, OKX o cualquier exchange participan enviando SOL a una <strong>Burner Wallet temporal</strong> generada en el browser — sin memo, sin wallet Web3, sin intermediario backend.</p>
   </div>
+  <div class="card">
+    <div class="card-icon">⚙️</div>
+    <h3>Browser Crank</h3>
+    <p>Un hook React (<code>useBrowserCrank</code>) que se ejecuta en cada visita a una Campaign Page. <strong>Resuelve automáticamente</strong> campañas expiradas y <strong>envía premios</strong> a ganadores CEX — sin servidor, sin cron job.</p>
+  </div>
+  <div class="card">
+    <div class="card-icon">📊</div>
+    <h3>Dashboard en vivo</h3>
+    <p>Panel completo con datos de mercado en tiempo real (precio, volumen 24h, holders), tesorería on-chain, gestión de fee sharing y claim de fees acumuladas de trading en Bags.</p>
+  </div>
 </div>
 
 <div class="box purple" style="margin-top:22px">
-  <strong>El problema que resuelve:</strong> Los tokens lanzados en Bags no tienen mecanismo de presión de compra sostenida. BCF crea ese motor: cada ronda de financiamiento sin ganador alimenta la tesorería del creador, que se usa para recomprar el token automáticamente.
+  <strong>El problema que resuelve:</strong> Los tokens lanzados en Bags no tienen mecanismo de presión de compra sostenida. BCF crea ese motor: cada ronda de financiamiento sin ganador alimenta la tesorería del creador, que se usa para recomprar el token automáticamente. El Browser Crank elimina la necesidad de un operador centralizado — cualquier visita a la página dispara la resolución.
 </div>
 </div>
 
-<!-- 02 PÁGINAS -->
+<!-- 02 ARQUITECTURA DE COMPONENTES -->
 <div class="sec">
-<div class="sec-label">02 — Interfaz de usuario</div>
+<div class="sec-label">02 — Arquitectura de componentes</div>
+<h2>Árbol de archivos — Frontend React + Vite</h2>
+
+<div class="file-tree">
+<span class="dir">src/</span><br>
+├── <span class="file">main.jsx</span>        <span class="comment">— Punto de entrada, monta &lt;App /&gt;</span><br>
+├── <span class="file">App.jsx</span>         <span class="comment">— Router, WalletProvider, ConnectionProvider, ToastProvider</span><br>
+├── <span class="file">index.css</span>       <span class="comment">— Design system: CSS variables, clases .card, .btn, .pos, .pos-grid, etc.</span><br>
+│<br>
+├── <span class="dir">components/</span><br>
+│   ├── <span class="file">Layout.jsx</span>      <span class="comment">— Header persistente (nav + WalletMultiButton) + &lt;Outlet /&gt;</span><br>
+│   ├── <span class="file">Toast.jsx</span>       <span class="comment">— Sistema de notificaciones toast (ToastProvider + useToast hook)</span><br>
+│   └── <span class="file">CampaignCard.jsx</span> <span class="comment">— Tarjeta de campaña reutilizable (Home + Explore)</span><br>
+│<br>
+├── <span class="dir">pages/</span><br>
+│   ├── <span class="file">HomePage.jsx</span>          <span class="comment">— Hero + stats + "How it works" + campañas activas</span><br>
+│   ├── <span class="file">ExplorePage.jsx</span>       <span class="comment">— Catálogo filtrable con CampaignSection agrupado</span><br>
+│   ├── <span class="file">CreateTokenPage.jsx</span>   <span class="comment">— Wizard 5 pasos para lanzar token en Bags</span><br>
+│   ├── <span class="file">CreateCampaignPage.jsx</span> <span class="comment">— Wizard 3 pasos para crear campaña on-chain</span><br>
+│   ├── <span class="file">CampaignPage.jsx</span>      <span class="comment">— Detalle de campaña: grid posiciones + Browser Crank + modales</span><br>
+│   └── <span class="file">DashboardPage.jsx</span>     <span class="comment">— Panel creador: tokens, campañas, tesorería, reinversión</span><br>
+│<br>
+├── <span class="dir">lib/</span><br>
+│   ├── <span class="file">bags.js</span>         <span class="comment">— Bags API v2: launch, fee-share, claim, trade, analytics, dexscreener, incorporate</span><br>
+│   ├── <span class="file">programClient.js</span> <span class="comment">— Cliente Anchor: PDAs, instrucciones on-chain, read helpers</span><br>
+│   ├── <span class="file">constants.js</span>    <span class="comment">— FEE_MODES, CATEGORIES, DURATIONS, CEX params, SOL price live</span><br>
+│   ├── <span class="file">solana.js</span>       <span class="comment">— Connection, explorer links, getSOLBalance, airdrop, isValidKey</span><br>
+│   ├── <span class="file">store.js</span>        <span class="comment">— localStorage data layer (tokens y campañas — capa de simulación DevNet)</span><br>
+│   └── <span class="file">idl.json</span>        <span class="comment">— IDL generado por Anchor para el programa BCF</span><br>
+│<br>
+└── <span class="dir">utils/</span><br>
+    └── <span class="file">campaignSorting.js</span> <span class="comment">— Algoritmo de prioridad: active → pending → settled → alfabético</span><br>
+<br>
+<span class="dir">anchor/</span><br>
+├── <span class="dir">programs/bags-creator-fund/src/</span><br>
+│   └── <span class="file">lib.rs</span>   <span class="comment">— Contrato Anchor v0.2.1 — 10 instrucciones, 3 tipos de cuenta PDA</span><br>
+├── <span class="file">Anchor.toml</span><br>
+└── <span class="file">Cargo.toml</span><br>
+<br>
+<span class="dir">scripts/</span><br>
+├── <span class="file">deploy.sh</span>          <span class="comment">— Compila + despliega DevNet + auto-parchea ID + lanza dev server</span><br>
+└── <span class="file">deploy-mainnet.sh</span>  <span class="comment">— Compila + despliega Mainnet + auto-parchea ID</span><br>
+<br>
+<span class="file">vite.config.js</span>   <span class="comment">— Proxy /watcher → localhost:3001 (devuelve 503 si nada escucha)</span><br>
+<span class="file">package.json</span>     <span class="comment">— Scripts: dev, build, preview</span>
+</div>
+
+<h3 style="margin-top:24px;margin-bottom:10px">Componentes clave — descripción</h3>
+
+<table class="tbl">
+<thead><tr><th>Componente / Módulo</th><th>Responsabilidad principal</th></tr></thead>
+<tbody>
+<tr><td><code>App.jsx</code></td><td>Configura los 4 wallet adapters (Phantom, Solflare, Coinbase, Trust), el <code>ConnectionProvider</code> con el RPC configurado, y el <code>BrowserRouter</code> con las 6 rutas. Exporta <code>useAnchorProvider()</code> — hook que crea un <code>AnchorProvider</code> a partir de la wallet conectada y la connection.</td></tr>
+<tr><td><code>Layout.jsx</code></td><td>Header persistente en todas las rutas. Muestra la navegación principal, el badge de red (DevNet morado / Mainnet verde), el <code>WalletMultiButton</code> de <code>@solana/wallet-adapter-react-ui</code>, y el <code>&lt;Outlet /&gt;</code> de React Router donde se renderizan las páginas.</td></tr>
+<tr><td><code>Toast.jsx</code></td><td>Sistema de notificaciones toast. <code>ToastProvider</code> mantiene la lista de toasts en estado React. <code>useToast()</code> devuelve una función <code>toast(message, type)</code> donde type puede ser <code>"success"</code>, <code>"error"</code>, <code>"info"</code>. Los toasts se auto-eliminan tras unos segundos y se renderizan en la esquina de la pantalla.</td></tr>
+<tr><td><code>CampaignCard.jsx</code></td><td>Tarjeta de campaña reutilizable usada en <code>HomePage</code> (sección "Active Campaigns") y <code>ExplorePage</code>. Muestra: título, estado (badge), precio por posición, posiciones vendidas/100, tiempo restante, pot total. Enlaza a <code>/campaign/:pda</code>.</td></tr>
+<tr><td><code>programClient.js</code></td><td>Toda la lógica de interacción con el contrato Anchor. PDAs, instrucciones (initialize, create, fund, buy, resolve, claim, push, route, deposit, withdraw), helpers de lectura (<code>fetchAllCampaigns</code>, <code>fetchAllProjects</code>, <code>fetchCreatorCampaigns</code>) y transformación de datos (<code>campaignAccountToDisplay</code>).</td></tr>
+<tr><td><code>bags.js</code></td><td>Integración completa con la Bags API v2: 4 pasos de token launch, fee-share config y administración, claim de fees, trade API (swap), analytics, dexscreener, e incorporation. Toda comunicación siempre apunta a <code>mainnetConnection</code> (Mainnet Solana) independiente de la red BCF activa.</td></tr>
+<tr><td><code>store.js</code></td><td>Capa de <code>localStorage</code> para tokens y campañas simuladas en DevNet. Funciona como fallback cuando Bags API no está disponible. En producción Mainnet, los datos on-chain son la fuente de verdad; este store persiste metadata local complementaria.</td></tr>
+</tbody>
+</table>
+</div>
+
+<!-- 03 PÁGINAS -->
+<div class="sec">
+<div class="sec-label">03 — Interfaz de usuario</div>
 <h2>Seis rutas, un flujo completo</h2>
 
 <div class="cols2">
   <div class="card">
     <h3>🏠 Home — <code>/</code></h3>
-    <p>Muestra campañas activas en tiempo real, estadísticas globales (campañas totales, SOL en juego) y el estado en vivo de la conexión con la API de Bags. Botones de acceso rápido a Explore y New Token.</p>
+    <p>Hero con título y descripción del protocolo. Badge de estado de la Bags API (verde/rojo en tiempo real via <code>pingBags()</code>). Badge de red activa (DevNet/Mainnet). Sección de stats globales (total campañas, activas, SOL total en juego + equivalente USDC). Sección "How it works" con 3 cards. Sección Treasury + Token Economy con bullets. Grid de hasta 6 campañas activas. Botones de acceso rápido a Explore y New Token.</p>
   </div>
   <div class="card">
     <h3>🔍 Explore — <code>/explore</code></h3>
-    <p>Catálogo completo de campañas con filtros por estado (activo, pendiente, resuelto) y categoría. Búsqueda por texto. Ordenado automáticamente: activos primero, luego pendientes, luego resueltos.</p>
+    <p>Catálogo completo de campañas on-chain. Filtros: búsqueda por texto (título + descripción), estado (All / Active / Pending / Settled) y categoría (8 opciones). Ordenado con el algoritmo de prioridad. Agrupado en secciones: 🔥 Active, ⏳ Upcoming, 📊 Completed. Cada sección muestra el conteo entre paréntesis y se oculta si está vacía.</p>
   </div>
   <div class="card">
     <h3>🪙 New Token — <code>/create-token</code></h3>
-    <p>Flujo guiado de 5 pasos: Project Info → Launch Type → Fee Sharing → Ownership (initial buy) → Review &amp; Launch. Lanza en Bags Mainnet con fallback a simulación DevNet si la API falla.</p>
+    <p>Wizard de 5 pasos: Project Info → Launch Type → Fee Sharing → Ownership → Review &amp; Launch. Lanza en Bags Mainnet con fallback a simulación DevNet si la API falla o el usuario rechaza. Tras el lanzamiento, muestra el mint address, el project index y botones para crear campaña o ir al dashboard.</p>
   </div>
   <div class="card">
     <h3>📊 Dashboard — <code>/dashboard</code></h3>
-    <p>Panel del creador: tokens, campañas, tesorería, datos de mercado en vivo. Acciones: Withdraw, <strong>⬇ Fund Treasury</strong>, 🔥 Reinvest, ⚙️ Fee Sharing, 💰 Claim Bags Fees. Solo accesible con wallet conectada.</p>
+    <p>Panel del creador. Requiere wallet conectada. Secciones: header con balance + airdrop DevNet + total tesorería, tarjetas de tokens con datos de mercado en vivo, campañas agrupadas por estado con tabs de filtro por proyecto. Modales: Withdraw, ⬇ Fund Treasury, 🔥 Reinvest, ⚙️ Fee Sharing, 💰 Claim Fees.</p>
   </div>
   <div class="card">
     <h3>➕ New Campaign — <code>/create-campaign</code></h3>
-    <p>Formulario de 3 pasos (Campaign Info → Funding Economics → Review). Se vincula a un token/proyecto existente del creador. Accesible desde el Dashboard o con <code>?project=N</code> en la URL.</p>
+    <p>Wizard de 3 pasos: Campaign Info → Funding Economics → Review. Carga automáticamente todos los proyectos del creador. Soporta <code>?project=N</code> en la URL para preseleccionar proyecto. Muestra el cálculo en vivo del max pot, treasury/sale y token ratio mientras se ajustan los parámetros.</p>
   </div>
   <div class="card">
     <h3>📋 Campaign Page — <code>/campaign/:pda</code></h3>
-    <p>Grid de 100 posiciones (00–99), panel de estadísticas en tiempo real, modal de participación con <strong>modo Wallet</strong> o <strong>modo CEX (Burner Wallet)</strong>, y banner de ganador verificado on-chain tras el sorteo.</p>
+    <p>Grid de 100 posiciones (00–99) con colores semánticos. Panel lateral sticky con estadísticas en tiempo real, cuenta atrás en vivo (1 segundo), y acciones según rol (creador / participante / visitante). Modales: DepositModal (Wallet + Address/Exchange) y ParticipateModal (Wallet + CEX con BurnerCEXTab). Banner de ganador on-chain tras el sorteo. Browser Crank corriendo en background.</p>
   </div>
 </div>
 
 <div class="box teal" style="margin-top:18px">
-  <strong>Wallets soportadas:</strong> Phantom · Solflare · Coinbase Wallet · Trust Wallet. Configuradas en <code>App.jsx</code> via <code>@solana/wallet-adapter-*</code>. El banner de red en la parte superior cambia entre DevNet (morado) y Mainnet (verde).
+  <strong>Wallets soportadas:</strong> Phantom · Solflare · Coinbase Wallet · Trust Wallet. Configuradas en <code>App.jsx</code> via <code>@solana/wallet-adapter-*</code>. El banner de red en la parte superior cambia entre DevNet (morado) y Mainnet (verde). <code>autoConnect: true</code> — la wallet reconecta automáticamente al recargar la página.
 </div>
 </div>
 
-<!-- 03 TOKEN CREATION -->
+<!-- 04 TOKEN CREATION -->
 <div class="sec">
-<div class="sec-label">03 — Creación de token</div>
+<div class="sec-label">04 — Creación de token</div>
 <h2>Lanzar un token en Bags desde BCF — 5 pasos</h2>
 
 <div class="steps">
@@ -210,18 +294,19 @@ footer strong{color:var(--text2);font-weight:500}
     <div class="step-n">1</div>
     <div>
       <h4>Project Info</h4>
-      <p>Nombre, símbolo (max 10 chars), descripción (min 20 chars), imagen URL, Twitter, website y categoría. BCF llama a <code>POST /token-launch/create-token-info</code> (FormData, <em>no JSON</em>) → devuelve <code>tokenMint</code> y <code>metadataUri</code>.</p>
+      <p>Nombre (max 80 chars), símbolo (max 10 chars, auto-uppercase), descripción (min 20 chars), imagen URL, Twitter (@handle), website y categoría (8 opciones: Tech, Art, Music, Games, Community, DeFi, Content, Other). BCF llama a <code>POST /token-launch/create-token-info</code> (FormData, <em>no JSON</em>) → devuelve <code>tokenMint</code> y <code>metadataUri</code> (URI de IPFS).</p>
     </div>
   </div>
   <div class="step">
     <div class="step-n">2</div>
     <div>
-      <h4>Launch Type — Fee Mode</h4>
+      <h4>Launch Type — Fee Mode (permanente)</h4>
       <p>Elige uno de los 4 modos de fee (<code>bagsConfigType</code> UUID):<br>
-        • <strong>Founder Mode</strong> — 2% flat, creator recibe 1% del volumen total (UUID: <code>fa29606e…</code>) <em>recommended</em><br>
-        • <strong>Low Early → High After</strong> — 0.25% pre-migration → 1% post (UUID: <code>d16d3585…</code>)<br>
-        • <strong>High Early → Low After</strong> — 1% pre-migration → 0.25% post (UUID: <code>a7c8e1f2…</code>)<br>
-        • <strong>Paper Hand Tax Mode</strong> — 10% flat, 50% añadido a LP (UUID: <code>48e26d2f…</code>)
+        • <strong>Founder Mode</strong> — 2% flat pre y post migration, creator recibe 1% del volumen total. 25% fee compounding post-migration. UUID: <code>fa29606e-5e48-4c37-827f-4b03d58ee23d</code> — <em>Recommended</em><br>
+        • <strong>Low Early → High After</strong> — 0.25% pre-migration → 1% post. 50% compounding. UUID: <code>d16d3585-6488-4a6c-9a6f-e6c39ca0fda3</code><br>
+        • <strong>High Early → Low After</strong> — 1% pre-migration → 0.25% post. 50% compounding. UUID: <code>a7c8e1f2-3d4b-5a6c-9e0f-1b2c3d4e5f6a</code><br>
+        • <strong>Paper Hand Tax Mode</strong> — 10% flat todas las operaciones, 50% añadido a LP. UUID: <code>48e26d2f-0a9d-4625-a3cc-c3987d874b9e</code><br>
+        También aparece un aviso sobre <strong>Company Mode</strong> (incorporation) disponible post-lanzamiento desde el Dashboard.
       </p>
     </div>
   </div>
@@ -229,33 +314,37 @@ footer strong{color:var(--text2);font-weight:500}
     <div class="step-n">3</div>
     <div>
       <h4>Fee Sharing — hasta 100 claimers</h4>
-      <p>La UI permite configurar <code>claimersArray</code> y <code>basisPointsArray</code> (suma = 10 000 bp). <strong>Importante:</strong> durante el lanzamiento, Bags API recibe siempre <code>[creator, 100%]</code> — es la única configuración válida en el momento de creación. Los claimers personalizados se aplican <em>post-lanzamiento</em> desde el Dashboard via <code>POST /fee-share/admin/update-config</code>.</p>
+      <p>La UI permite configurar <code>claimersArray</code> y <code>basisPointsArray</code> (suma = 10 000 bp). El botón <strong>"↗ Use connected wallet"</strong> pre-rellena el primer claimer. <strong>Importante:</strong> durante el lanzamiento, Bags API recibe siempre <code>[creator, 100%]</code> — es la única configuración válida en el momento de creación. Los claimers personalizados se aplican <em>post-lanzamiento</em> desde el Dashboard via <code>POST /fee-share/admin/update-config</code>.</p>
     </div>
   </div>
   <div class="step">
     <div class="step-n">4</div>
     <div>
       <h4>Ownership — Initial Buy (opcional)</h4>
-      <p>El creador puede comprar tokens antes que nadie. La UI ofrece presets: Skip / 0.1 / 0.5 / 1 / 2.5 SOL. Se pasa como <code>initialBuyLamports</code> al step 3 de la API.</p>
+      <p>El creador puede comprar tokens antes que nadie, al precio más bajo de la bonding curve. La UI ofrece presets rápidos: <strong>Skip / 0.1 / 0.5 / 1 / 2.5 SOL</strong> + campo numérico libre. Se pasa como <code>initialBuyLamports</code> al step 3 de la API. El total requerido es ~0.2 SOL + el amount de initial buy.</p>
     </div>
   </div>
   <div class="step">
     <div class="step-n">5</div>
     <div>
       <h4>Review &amp; Launch — firma Mainnet</h4>
-      <p>El usuario revisa todo y firma con su wallet. BCF ejecuta los 4 pasos de Bags API en secuencia: <code>create-token-info</code> → <code>fee-share/config</code> (+ firma si <code>needsCreation=true</code>) → <code>create-launch-transaction</code> → broadcast a Mainnet. Si algo falla, cae a <strong>modo simulación DevNet</strong> automáticamente y el proyecto BCF on-chain se crea igualmente. El token queda vivo en <code>bags.fm/token/&lt;mint&gt;</code>.</p>
+      <p>El usuario revisa todos los parámetros en una tabla resumen. Al hacer clic en <strong>"🚀 Launch"</strong>, BCF ejecuta los 4 pasos de Bags API en secuencia: <code>create-token-info</code> → <code>fee-share/config</code> (+ firma de TXs si <code>needsCreation=true</code>) → <code>create-launch-transaction</code> → broadcast a Mainnet. Si Bags falla o el usuario cancela, cae automáticamente a <strong>modo simulación DevNet</strong> (mint ficticio) y el proyecto BCF on-chain se crea igualmente. El token queda vivo en <code>bags.fm/token/&lt;mint&gt;</code> cuando el launch fue real.</p>
     </div>
   </div>
 </div>
 
 <div class="box teal">
-  <strong>Company Mode</strong> (post-lanzamiento): Visible en la UI del token launch como opción adicional. Se inicia desde el Dashboard via <code>POST /incorporate/payment</code> → <code>POST /incorporate</code> → <code>POST /incorporate/start</code>. No forma parte del flujo de lanzamiento inicial.
+  <strong>Company Mode</strong> (post-lanzamiento): Se inicia desde el Dashboard via <code>POST /incorporate/payment</code> (pago on-chain) → <code>POST /incorporate</code> (datos legales: founders, participación, nombres de empresa preferidos, categoría, Twitter) → <code>POST /incorporate/start</code>. Admite 9 categorías: AI, DeFi, Infrastructure, Gaming, NFT, Meme, RWA, DePIN, Legal.
+</div>
+
+<div class="box blue">
+  <strong>isRealMint tracking:</strong> Cuando el launch Bags es exitoso, BCF llama a <code>markMintAsReal(mint)</code> que guarda el mint en <code>localStorage['bcf_real_mints']</code>. El Dashboard usa <code>isRealMint(mint)</code> para mostrar badge <strong>✅ Mainnet</strong> (verde) vs <strong>⚠ Simulated</strong> (ámbar) en cada tarjeta de token.
 </div>
 </div>
 
-<!-- 04 ARQUITECTURA PDA -->
+<!-- 05 ARQUITECTURA PDA -->
 <div class="sec">
-<div class="sec-label">04 — Arquitectura on-chain</div>
+<div class="sec-label">05 — Arquitectura on-chain</div>
 <h2>Tres tipos de cuentas PDA</h2>
 
 <div class="diagram">
@@ -317,13 +406,13 @@ footer strong{color:var(--text2);font-weight:500}
 </div>
 
 <div class="box blue">
-  <strong>Tesorería real:</strong> <code>treasury_lamports</code> en cada <code>ProjectAccount</code> siempre coincide con el SOL físico en esa PDA. Aumenta cuando una campaña sin ganador transfiere su fondo, o cuando el creador deposita directamente con <code>deposit_to_treasury</code>. Disminuye con <code>withdraw_treasury</code>.
+  <strong>Tesorería real:</strong> <code>treasury_lamports</code> en cada <code>ProjectAccount</code> siempre coincide con el SOL físico en esa PDA. Aumenta cuando una campaña sin ganador transfiere su fondo (<code>route_no_winner</code>), o cuando el creador deposita directamente con <code>deposit_to_treasury</code>. Disminuye con <code>withdraw_treasury</code>.
 </div>
 </div>
 
-<!-- 05 LIFECYCLE -->
+<!-- 06 LIFECYCLE -->
 <div class="sec">
-<div class="sec-label">05 — Ciclo de vida de una campaña</div>
+<div class="sec-label">06 — Ciclo de vida de una campaña</div>
 <h2>Tres estados, dos posibles destinos</h2>
 
 <div class="diagram">
@@ -380,155 +469,187 @@ footer strong{color:var(--text2);font-weight:500}
 </div>
 
 <div class="box amber">
-  <strong>Aleatoriedad sin oracle:</strong> <code>resolve_campaign</code> lee el <code>SlotHashes</code> sysvar de Solana. El resultado es determinístico, público y reproducible. <strong>Cualquier usuario</strong> (no solo el creador) puede llamar esta instrucción una vez pasado el deadline — hay un botón visible en la Campaign Page para todos.
+  <strong>Aleatoriedad sin oracle:</strong> <code>resolve_campaign</code> lee el <code>SlotHashes</code> sysvar de Solana. Si hay slots disponibles, toma los bytes 16–24 del primer slot hash y calcula <code>u64 % 100</code>. Si no hay slots, usa <code>unix_timestamp % 100</code> como fallback. El resultado es determinístico, público y reproducible. <strong>Cualquier usuario</strong> puede llamar esta instrucción una vez pasado el deadline.
 </div>
 <p style="margin-top:14px">El rango siempre es 00–99, <strong>incluyendo posiciones no vendidas</strong>. Eso introduce la posibilidad real de que nadie gane, lo que alimenta la tesorería del creador.</p>
+
+<h3 style="margin-top:24px;margin-bottom:10px">Acciones por rol en Campaign Page</h3>
+<table class="tbl">
+<thead><tr><th>Estado de campaña</th><th>Rol del usuario</th><th>Acción disponible</th></tr></thead>
+<tbody>
+<tr><td>Pending</td><td>Creador</td><td>Botón "💰 Deposit {X} SOL to Activate" — abre DepositModal</td></tr>
+<tr><td>Pending</td><td>Cualquier visitante</td><td>Texto informativo "Waiting for creator to deposit prize..."</td></tr>
+<tr><td>Active (no expirada)</td><td>Sin wallet</td><td>Botón "🔌 Connect Wallet to Participate"</td></tr>
+<tr><td>Active (no expirada)</td><td>Cualquier wallet</td><td>Clic en posición disponible del grid → ParticipateModal</td></tr>
+<tr><td>Active (expirada)</td><td>Cualquier wallet</td><td>Botón "🎲 Resolve Round Now" — llama <code>resolve_campaign</code></td></tr>
+<tr><td>Settled (con ganador, soy el ganador)</td><td>Ganador con wallet conectada</td><td>Botón "⚡ Claim Prize" → <code>claim_prize</code></td></tr>
+<tr><td>Settled (con ganador CEX)</td><td>Browser Crank (automático)</td><td><code>push_prize</code> automático — ganador no necesita firmar</td></tr>
+<tr><td>Settled (sin ganador)</td><td>Creador</td><td>Botón "🏦 Move Funds to Treasury" → <code>route_no_winner_to_treasury</code></td></tr>
+<tr><td>Settled (completo)</td><td>Creador</td><td>Link "🔁 New campaign with ${symbol}"</td></tr>
+</tbody>
+</table>
 </div>
 
-<!-- 06 PARTICIPACIÓN -->
+<!-- 07 PARTICIPACIÓN -->
 <div class="sec">
-<div class="sec-label">06 — Formas de participar</div>
+<div class="sec-label">07 — Formas de participar</div>
 <h2>Dos caminos de entrada</h2>
 
 <div class="cols2">
   <div class="card">
     <h3>🔐 Modo Wallet — Web3 directa</h3>
-    <p>El usuario conecta Phantom, Solflare, Coinbase Wallet o Trust Wallet. Hace clic en una posición disponible en el grid → firma la transacción → <code>buy_position</code> se ejecuta on-chain inmediatamente. Si la posición fue tomada entre el clic y la firma, el contrato Anchor rechaza con <code>PositionTaken</code> antes de mover fondos.</p>
+    <p>El usuario conecta Phantom, Solflare, MetaMask (Solana Snap), Coinbase Wallet o Trust Wallet. Hace clic en una posición disponible en el grid → aparece el ParticipateModal con la pestaña Wallet. Se muestra el balance, y al confirmar se ejecuta <code>buyPositionOnChain()</code> que llama <code>buy_position</code>. Si la posición fue tomada entre el clic y la firma, el contrato Anchor rechaza con <code>PositionTaken</code> antes de mover fondos. La UI verifica el estado on-chain antes de presentar la firma para evitar falsas expectativas.</p>
   </div>
   <div class="card">
     <h3>🏦 Modo CEX — Burner Wallet</h3>
-    <p>El usuario ingresa su dirección Solana (recipient). El browser genera un <strong>Burner Wallet temporal</strong> único para ese (campaña × posición). El usuario envía SOL desde su exchange a esa dirección. El browser detecta el pago y firma <code>buy_position</code> automáticamente — cero backend, cero servidor.</p>
+    <p>El usuario ingresa su dirección Solana (recipient). El browser genera un <strong>Burner Wallet temporal</strong> único para ese (campaña × posición). El usuario envía SOL desde su exchange a esa dirección. El browser detecta el pago vía polling y firma <code>buy_position</code> automáticamente — cero backend, cero servidor, cero memo. El Burner retiene 0.005 SOL como "gas de crank" para el auto-payout posterior.</p>
   </div>
 </div>
 
-<h3 style="margin-top:28px;margin-bottom:14px">Flujo detallado — Modo CEX (Burner Wallet)</h3>
+<h3 style="margin-top:28px;margin-bottom:14px">Flujo detallado — Modo CEX (BurnerCEXTab)</h3>
 
-<div class="diagram">
-<svg viewBox="0 0 860 310" xmlns="http://www.w3.org/2000/svg">
-<defs>
-<marker id="a4" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
-  <path d="M2 1L8 5L2 9" fill="none" stroke="#4f4d70" stroke-width="1.5"/>
-</marker>
-<marker id="a4g" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
-  <path d="M2 1L8 5L2 9" fill="none" stroke="#14b8a6" stroke-width="1.5"/>
-</marker>
-</defs>
-<!-- Step 1: User inputs address -->
-<rect x="20" y="30" width="130" height="52" rx="8" fill="#141428" stroke="#2a2a4a" stroke-width="1"/>
-<text x="85" y="52" text-anchor="middle" fill="#9896b8" font-family="'Space Mono'" font-size="9" font-weight="700">① Recipient</text>
-<text x="85" y="65" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">Ingresa dirección</text>
-<text x="85" y="78" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">Solana del usuario</text>
-<line x1="150" y1="56" x2="190" y2="56" stroke="#4f4d70" stroke-width="1" marker-end="url(#a4)"/>
+<div class="steps">
+  <div class="step">
+    <div class="step-n">1</div>
+    <div>
+      <h4>Step 1 — Recipient address</h4>
+      <p>El usuario ingresa su dirección Solana. El campo valida que sea una pubkey válida con <code>new PublicKey(v)</code>. Una vez ingresada, se genera o carga el Burner Wallet desde localStorage. El campo queda bloqueado (no editable) para mantener la coherencia del flujo.</p>
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-n">2</div>
+    <div>
+      <h4>Step 2 — Dirección Burner y cantidad exacta</h4>
+      <p>Se muestra la dirección del Burner Wallet con botón Copy. La cantidad solicitada es <strong>precio + 0.0100 SOL buffer</strong> (ej: si precio = 0.1000, enviar 0.1100 SOL). El buffer cubre: comisiones de exchange (retiro), fee de TX de compra, fee de TX de reembolso de cambio, y 0.005 SOL de crank reserve para el auto-payout.</p>
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-n">3</div>
+    <div>
+      <h4>Step 3 — Polling automático cada 5 segundos</h4>
+      <p>El browser consulta <code>getSignaturesForAddress(burnerPubkey, {limit:5})</code> y para cada TX reciente, analiza las instrucciones <code>transfer</code>. Suma todos los lamports recibidos. Lógica de validación: si total ≥ precio + <code>CEX_MIN_GAS_SOL</code> (0.001 SOL) → procede. Si hay pago parcial → muestra déficit exacto (ej: <em>"Received 0.0190 SOL — need 0.0020 more SOL"</em>) y continúa esperando. Un botón <strong>"Check Payment Now"</strong> permite verificación manual.</p>
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-n">4</div>
+    <div>
+      <h4>Verificación previa a la compra</h4>
+      <p>Antes de ejecutar la compra, el frontend verifica on-chain si la posición ya fue tomada. Si alguien más la compró mientras esperábamos el pago, ejecuta <strong>auto-refund completo</strong> al recipient inmediatamente — el usuario no pierde su SOL.</p>
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-n">5</div>
+    <div>
+      <h4>Ejecución on-chain por el Burner</h4>
+      <p>El Burner Wallet firma <code>buy_position</code> como <code>buyer</code>, con <code>recipient = dirección ingresada por el usuario</code>. El contrato asigna <code>pos.owner = recipient</code> on-chain. El Burner solo firma, nunca posee la posición ni puede ganar el premio.</p>
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-n">6</div>
+    <div>
+      <h4>Reembolso de cambio + Crank Reserve</h4>
+      <p>Tras la compra, el Burner lee su balance. Calcula: <code>refundable = balance - 5000 - CEX_CRANK_RESERVE_SOL (0.005 SOL)</code>. Si refundable &gt; <code>CEX_MIN_REFUND_LAMPORTS</code> (10 000 lamports = 0.00001 SOL), ejecuta un <code>SystemProgram.transfer</code> del sobrante al recipient. Los 0.005 SOL quedan en el Burner como gas para el Browser Crank automático.</p>
+    </div>
+  </div>
+</div>
 
-<!-- Step 2: Burner Wallet generated -->
-<rect x="190" y="30" width="160" height="52" rx="8" fill="#14052e" stroke="#6d28d9" stroke-width="1"/>
-<text x="270" y="50" text-anchor="middle" fill="#8b5cf6" font-family="'Space Mono'" font-size="9" font-weight="700">② Burner Wallet</text>
-<text x="270" y="65" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">Keypair efímero en browser</text>
-<text x="270" y="78" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">guardado en LocalStorage</text>
-<line x1="350" y1="56" x2="390" y2="56" stroke="#4f4d70" stroke-width="1" marker-end="url(#a4)"/>
-
-<!-- Step 3: Amount shown -->
-<rect x="390" y="30" width="170" height="52" rx="8" fill="#0e0e1c" stroke="#2a2a4a" stroke-width="1"/>
-<text x="475" y="50" text-anchor="middle" fill="#eeedf8" font-family="'Space Mono'" font-size="9" font-weight="700">③ Dirección mostrada</text>
-<text x="475" y="65" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">precio + 0.0100 SOL buffer</text>
-<text x="475" y="78" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">ej: 0.1100 si precio = 0.1000</text>
-<line x1="560" y1="56" x2="600" y2="56" stroke="#4f4d70" stroke-width="1" marker-end="url(#a4)"/>
-
-<!-- Step 4: User sends SOL from CEX -->
-<rect x="600" y="30" width="230" height="52" rx="8" fill="#141428" stroke="#2a2a4a" stroke-width="1"/>
-<text x="715" y="50" text-anchor="middle" fill="#9896b8" font-family="'Space Mono'" font-size="9" font-weight="700">④ Usuario envía SOL</text>
-<text x="715" y="65" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">desde exchange → Burner address</text>
-<text x="715" y="78" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">sin memo · cualquier exchange</text>
-
-<!-- SOL path -->
-<path d="M715 82 L715 150 L270 150 L270 110" fill="none" stroke="#2a2a4a" stroke-width="0.8" stroke-dasharray="3 2" marker-end="url(#a4)"/>
-<text x="490" y="145" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">⑤ SOL llega al Burner Wallet</text>
-
-<!-- Polling box -->
-<rect x="400" y="160" width="420" height="48" rx="7" fill="rgba(251,191,36,.07)" stroke="rgba(251,191,36,.22)" stroke-width="1"/>
-<text x="610" y="180" text-anchor="middle" fill="#fbbf24" font-family="'DM Sans'" font-size="9" font-weight="700">🔍 Polling getSignaturesForAddress cada 5 seg (max 6 min)</text>
-<text x="610" y="198" text-anchor="middle" fill="#6d5f9a" font-family="'DM Sans'" font-size="8">Si pago parcial → notifica déficit y sigue esperando · Si pago completo → ejecuta compra</text>
-
-<!-- Step 6: Frontend execution -->
-<rect x="110" y="230" width="230" height="52" rx="8" fill="#081918" stroke="#0c5445" stroke-width="1"/>
-<text x="225" y="250" text-anchor="middle" fill="#14b8a6" font-family="'Space Mono'" font-size="9" font-weight="700">⑥ Burner firma buy_position</text>
-<text x="225" y="265" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">recipient = dirección ingresada por usuario</text>
-<text x="225" y="278" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">cambio &gt;0.00001 SOL devuelto al recipient</text>
-<line x1="340" y1="256" x2="380" y2="256" stroke="#14b8a6" stroke-width="1.2" marker-end="url(#a4g)"/>
-
-<!-- Step 7: Campaign assigned -->
-<rect x="380" y="230" width="200" height="52" rx="8" fill="#080f1c" stroke="#144d85" stroke-width="1"/>
-<text x="480" y="250" text-anchor="middle" fill="#38bdf8" font-family="'Space Mono'" font-size="9" font-weight="700">⑦ Campaign Account</text>
-<text x="480" y="265" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">pos.filled=1 · pos.owner=recipientAddr</text>
-<text x="480" y="278" text-anchor="middle" fill="#34d399" font-family="'DM Sans'" font-size="8" font-weight="700">✓ Posición asignada on-chain</text>
-
-<!-- Done -->
-<line x1="580" y1="256" x2="620" y2="256" stroke="#14b8a6" stroke-width="1.2" marker-end="url(#a4g)"/>
-<rect x="620" y="230" width="100" height="52" rx="8" fill="#081918" stroke="#0c5445" stroke-width="1"/>
-<text x="670" y="253" text-anchor="middle" fill="#34d399" font-family="'Space Mono'" font-size="9" font-weight="700">✓ Done</text>
-<text x="670" y="268" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">Serverless</text>
-<text x="670" y="280" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">$0 infra</text>
-
-<!-- Wallet path shortcut -->
-<rect x="20" y="230" width="80" height="52" rx="7" fill="rgba(56,189,248,.06)" stroke="rgba(56,189,248,.2)" stroke-width="1"/>
-<text x="60" y="252" text-anchor="middle" fill="#38bdf8" font-family="'DM Sans'" font-size="8" font-weight="600">Con wallet</text>
-<text x="60" y="265" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">Firma directa</text>
-<text x="60" y="278" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">inmediato</text>
-<line x1="100" y1="256" x2="108" y2="256" stroke="#38bdf8" stroke-width="1" marker-end="url(#a4)"/>
-</svg>
+<div class="box red" style="margin-top:18px">
+  <strong>🛡️ Race condition — dos usuarios, misma posición:</strong><br/>
+  <p style="font-size:.83rem;margin-top:8px;line-height:1.6">
+    • <strong>Wallet directa:</strong> el contrato Anchor rechaza la segunda transacción con error <code>PositionTaken</code> <em>antes</em> de transferir SOL — el dinero nunca sale de la wallet del usuario.<br/>
+    • <strong>CEX / Burner:</strong> La instrucción <code>buy_position</code> también falla con <code>PositionTaken</code>. El frontend detecta este error en el catch de <code>executePurchase</code> y llama a <code>executeRefund</code> inmediatamente, devolviendo todo el SOL al recipient. El usuario ve un panel de reembolso con estado visual claro.
+  </p>
 </div>
 
 <div class="box teal">
   <strong>Serverless — $0 Infraestructura:</strong> El Burner Wallet se genera con <code>Keypair.generate()</code> en el browser. El polling usa <code>connection.getSignaturesForAddress</code> + <code>getParsedTransaction</code> directamente contra el RPC. No hay ningún servidor, watcher ni proceso backend involucrado en el flujo CEX.
 </div>
-
-<div class="box green" style="margin-top:10px">
-  <strong>Reembolsos y Cambio — Tres Casos:</strong><br>
-  <strong>① Pago insuficiente:</strong> El UI muestra el déficit exacto (<em>"Received 0.0190 SOL — need 0.0020 more"</em>) y continúa esperando — nunca hace nada prematuro.<br>
-  <strong>② Cambio justificado (&gt;0.00001 SOL / 10 000 lamports):</strong> Después de comprar la posición, el Burner devuelve el sobrante al recipient con un <code>SystemProgram.transfer</code>. El usuario recibe un toast de confirmación.<br>
-  <strong>③ Dust (≤0.00001 SOL):</strong> No se genera TX de reembolso adicional — el costo de la propia TX superaría el monto. El dust queda en el burner y se consume en fees.
-</div>
 </div>
 
-<!-- 07 ARQUITECTURA SIN SERVIDOR -->
+<!-- 07.5 BROWSER CRANK -->
 <div class="sec">
-<div class="sec-label">07 — Arquitectura serverless</div>
-<h2>Zero-Touch — Sin VPS, sin watcher, sin backend</h2>
+<div class="sec-label">07.5 — Automatización · Browser Crank</div>
+<h2>useBrowserCrank — Auto-resolve &amp; Auto-payout sin servidor</h2>
 
-<p>Toda la lógica CEX vive en el browser del usuario. El frontend lee el blockchain directamente a través del RPC configurado, sin intermediarios centralizados.</p>
+<p>Cada vez que cualquier usuario visita la Campaign Page de una campaña activa o resuelta, el hook <code>useBrowserCrank</code> se activa en background. Es un <code>useEffect</code> que corre un intervalo de 10 segundos y realiza dos tareas automáticas sin necesidad de que el usuario haga nada.</p>
 
-<table class="tbl" style="margin-top:20px">
-<thead><tr><th>Fase</th><th>Implementación real</th><th>Garantía de seguridad</th></tr></thead>
+<div class="diagram">
+<svg viewBox="0 0 860 290" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<marker id="ac" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+  <path d="M2 1L8 5L2 9" fill="none" stroke="#4f4d70" stroke-width="1.5"/>
+</marker>
+<marker id="acg" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+  <path d="M2 1L8 5L2 9" fill="none" stroke="#34d399" stroke-width="1.5"/>
+</marker>
+<marker id="acb" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+  <path d="M2 1L8 5L2 9" fill="none" stroke="#38bdf8" stroke-width="1.5"/>
+</marker>
+</defs>
+<!-- Trigger -->
+<rect x="20" y="10" width="180" height="52" rx="8" fill="#141428" stroke="#2a2a4a" stroke-width="1"/>
+<text x="110" y="30" text-anchor="middle" fill="#9896b8" font-family="'Space Mono'" font-size="9" font-weight="700">Visita Campaign Page</text>
+<text x="110" y="47" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">setInterval cada 10s + ejecución inmediata</text>
+<line x1="200" y1="36" x2="240" y2="36" stroke="#4f4d70" stroke-width="1" marker-end="url(#ac)"/>
+
+<!-- Decision -->
+<rect x="240" y="10" width="200" height="52" rx="8" fill="#0e0e1c" stroke="#2a2a4a" stroke-width="1"/>
+<text x="340" y="30" text-anchor="middle" fill="#eeedf8" font-family="'Space Mono'" font-size="9" font-weight="700">¿Campaña expired?</text>
+<text x="340" y="46" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">status=active AND now &gt; deadline</text>
+<line x1="440" y1="36" x2="476" y2="36" stroke="#4f4d70" stroke-width="1" marker-end="url(#ac)"/>
+<text x="460" y="28" text-anchor="middle" fill="#34d399" font-family="'DM Sans'" font-size="8">SÍ</text>
+
+<!-- Auto Resolve box -->
+<rect x="476" y="10" width="360" height="84" rx="8" fill="#081918" stroke="#0c5445" stroke-width="1"/>
+<text x="656" y="29" text-anchor="middle" fill="#14b8a6" font-family="'Space Mono'" font-size="9" font-weight="700">AUTO-RESOLVE (resolve_campaign)</text>
+<text x="656" y="44" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">1. ¿Wallet conectada = creator? → usa wallet del creador</text>
+<text x="656" y="58" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">2. Sino: busca bcf_burner_{pda}_{0..99} en localStorage</text>
+<text x="656" y="72" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">3. Si burner tiene ≥ 0.001 SOL → firma resolve automáticamente</text>
+<text x="656" y="85" text-anchor="middle" fill="#34d399" font-family="'DM Sans'" font-size="8" font-weight="600">→ campaña queda en estado Settled</text>
+
+<!-- Second path: settled with winner -->
+<text x="340" y="90" text-anchor="middle" fill="#9896b8" font-family="'DM Sans'" font-size="8">¿Settled con ganador sin cobrar?</text>
+<line x1="340" y1="62" x2="340" y2="110" stroke="#2a2a4a" stroke-width="0.8" stroke-dasharray="3 2" marker-end="url(#ac)"/>
+<text x="356" y="88" fill="#38bdf8" font-family="'DM Sans'" font-size="8">SÍ</text>
+
+<rect x="240" y="110" width="200" height="52" rx="8" fill="#080f1c" stroke="#144d85" stroke-width="1"/>
+<text x="340" y="130" text-anchor="middle" fill="#38bdf8" font-family="'Space Mono'" font-size="9" font-weight="700">status=settled</text>
+<text x="340" y="145" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">hasWinner=true AND !claimed</text>
+<line x1="440" y1="136" x2="476" y2="136" stroke="#4f4d70" stroke-width="1" marker-end="url(#ac)"/>
+
+<!-- Auto Push box -->
+<rect x="476" y="110" width="360" height="84" rx="8" fill="#14052e" stroke="#6d28d9" stroke-width="1"/>
+<text x="656" y="129" text-anchor="middle" fill="#8b5cf6" font-family="'Space Mono'" font-size="9" font-weight="700">AUTO-PAYOUT (push_prize)</text>
+<text x="656" y="144" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">1. Extrae winnerAddr de campaign.winnerWallet</text>
+<text x="656" y="158" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">2. ¿Wallet conectada = creator? → firma push_prize</text>
+<text x="656" y="172" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">3. Sino: busca burner con ≥ 0.001 SOL → firma automáticamente</text>
+<text x="656" y="185" text-anchor="middle" fill="#8b5cf6" font-family="'DM Sans'" font-size="8" font-weight="600">→ ganador CEX recibe premio sin firmar nada</text>
+
+<!-- Burner Wallet store -->
+<rect x="20" y="210" width="200" height="68" rx="8" fill="rgba(251,191,36,.06)" stroke="rgba(251,191,36,.2)" stroke-width="1"/>
+<text x="120" y="230" text-anchor="middle" fill="#fbbf24" font-family="'Space Mono'" font-size="9" font-weight="700">localStorage</text>
+<text x="120" y="245" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">bcf_burner_{pda}_{0} → secretKey JSON</text>
+<text x="120" y="259" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">bcf_burner_{pda}_{1} → secretKey JSON</text>
+<text x="120" y="271" text-anchor="middle" fill="#4f4d70" font-family="'DM Sans'" font-size="8">... hasta posición 99</text>
+<path d="M220 244 L476 160" fill="none" stroke="rgba(251,191,36,.4)" stroke-width="0.8" stroke-dasharray="3 2" marker-end="url(#ac)"/>
+</svg>
+</div>
+
+<table class="tbl" style="margin-top:16px">
+<thead><tr><th>Comportamiento</th><th>Detalle</th></tr></thead>
 <tbody>
-<tr>
-  <td>① Generación del Burner</td>
-  <td><code>Keypair.generate()</code> en el browser via <code>@solana/web3.js</code>. La clave privada se guarda en <code>localStorage</code> con clave <code>bcf_burner_{campaignPDA}_{positionIndex}</code> para resistir refrescos. Se elimina automáticamente al completar la compra o el reembolso.</td>
-  <td>Efímero. La clave privada solo existe mientras dura la transacción. Scope: una campaña × una posición.</td>
-</tr>
-<tr>
-  <td>② Detección de pago</td>
-  <td><code>getSignaturesForAddress</code> + <code>getParsedTransaction</code> cada 5 segundos. Se suman todos los <code>transfer</code> recibidos. Si el total ≥ precio + 0.0010 SOL (mínimo gas) → procede. Si es parcial → notifica déficit y espera. Si hay pago pero la posición ya fue tomada → ejecuta reembolso.</td>
-  <td>Safe Buffer: Se solicita 0.0100 SOL extra para cubrir cualquier comisión de exchange y asegurar gas para el Browser Crank auto-payout.</td>
-</tr>
-<tr>
-  <td>③ Ejecución on-chain</td>
-  <td>El Burner Wallet es el <code>buyer</code> que firma <code>buy_position</code>. El parámetro <code>recipient</code> se pasa como la dirección que el usuario ingresó. El contrato Anchor asigna <code>pos.owner = recipient</code> on-chain.</td>
-  <td>El Burner wallet no puede ganar el premio: la posición pertenece al recipient on-chain. El Burner solo firma la compra.</td>
-</tr>
-<tr>
-  <td>④ Devolución de cambio</td>
-  <td>Tras la compra, se lee el balance del Burner. Si supera 10 000 lamports, se ejecuta un <code>SystemProgram.transfer</code> del sobrante al recipient. Si es dust (≤10 000 lamports), no se genera TX adicional.</td>
-  <td>El recipient siempre recibe el cambio. El dust mínimo queda en el Burner (valor inferior al costo de la TX de reembolso).</td>
-</tr>
+<tr><td>Frecuencia de ejecución</td><td>Cada 10 segundos mientras el usuario está en la Campaign Page. También se ejecuta una vez al montar el componente (sin esperar los 10s).</td></tr>
+<tr><td>Condición Auto-Resolve</td><td><code>campaign.status === 'active'</code> AND <code>Date.now() &gt; campaign.deadline</code>. No se activa si la campaña está pending.</td></tr>
+<tr><td>Condición Auto-Payout</td><td><code>campaign.status === 'settled'</code> AND <code>campaign.hasWinner === true</code> AND <code>!campaign.claimed</code>.</td></tr>
+<tr><td>Prioridad de firmante</td><td>1. Wallet conectada del creador (si es el creator). 2. Cualquier Burner Wallet almacenado en localStorage para esa campaña que tenga ≥ 0.001 SOL. Los burners se buscan de posición 0 a 99 en orden.</td></tr>
+<tr><td>Crank Reserve</td><td>El flujo CEX retiene 0.005 SOL en el Burner Wallet post-compra. Este SOL es el "combustible" que permite al Browser Crank ejecutar <code>resolve_campaign</code> y/o <code>push_prize</code> automáticamente cuando alguien visita la página.</td></tr>
+<tr><td>Limpieza del Burner</td><td>Tras la compra exitosa (o reembolso), el Burner solo se elimina del localStorage si su balance cae por debajo del 90% del crank reserve. Si aún tiene gas, se conserva para actuar como Crank.</td></tr>
+<tr><td>Errores silenciosos</td><td>Todos los errores en el crank se capturan con <code>try-catch</code> y se loggean solo en consola (<code>console.warn</code>). No bloquean la UI ni muestran toasts de error al usuario.</td></tr>
 </tbody>
 </table>
 
-<div class="box red" style="margin-bottom:10px">
-  <strong>🛡️ Race condition — dos usuarios, misma posición:</strong><br/>
-  <p style="font-size:.83rem;margin-top:8px;line-height:1.6">
-    • <strong>Wallet directa:</strong> el contrato Anchor rechaza la segunda transacción con error <code>PositionTaken</code> <em>antes</em> de transferir SOL — el dinero nunca sale de la wallet del usuario.<br/>
-    • <strong>CEX / Burner:</strong> La instrucción <code>buy_position</code> también falla con <code>PositionTaken</code>. El frontend detecta este error y ejecuta <code>executeRefund</code> inmediatamente, devolviendo todo el SOL al recipient. El usuario ve el panel de reembolso con un botón para elegir otra posición.
-  </p>
+<div class="box green">
+  <strong>Por qué no necesita servidor:</strong> El Burner Wallet es un keypair completo almacenado en localStorage. Puede firmar transacciones independientemente de la wallet conectada del usuario. Cualquier visitante de la Campaign Page con un Burner que tenga gas suficiente actúa como "operador" involuntario del protocolo — sin saberlo, sin cobrarlo, sin riesgo.
 </div>
 </div>
 
@@ -541,42 +662,42 @@ footer strong{color:var(--text2);font-weight:500}
   <div class="step">
     <div class="step-n">1</div>
     <div>
-      <h4>Posición asignada con recipient</h4>
-      <p>Al comprar una posición CEX, <code>buy_position</code> registra <code>pos.owner = recipientAddr</code> on-chain. La Campaign Page guarda en <code>localStorage</code> el recipientAddr como <em>hint local</em> para mostrar el banner de ganador. El hint no tiene valor de seguridad — la fuente de verdad es siempre el blockchain.</p>
+      <h4>Posición asignada con recipient on-chain</h4>
+      <p>Al comprar una posición (wallet directa o CEX), <code>buy_position</code> registra <code>pos.owner = recipient_pubkey</code> on-chain de forma atómica. Para CEX, el recipient es la dirección que el usuario ingresó en el Step 1, NO el Burner Wallet. La Campaign Page guarda en <code>localStorage['bcf_cex_positions_v1']</code> el recipientAddr como <em>hint local</em> para mostrar el banner de ganador. El hint no tiene valor de seguridad.</p>
     </div>
   </div>
   <div class="step">
     <div class="step-n">2</div>
     <div>
-      <h4>Campaña resuelve — cualquiera puede llamar</h4>
-      <p>Pasado el deadline, aparece el botón <strong>"🎲 Resolve Round Now"</strong> en la Campaign Page para cualquier usuario. Llama <code>resolve_campaign</code>: lee <code>SlotHashes</code> sysvar de Solana y determina la posición ganadora de forma determinística. No requiere el creador ni ningún operador.</p>
+      <h4>Resolución — cualquiera puede llamar (o el Crank lo hace solo)</h4>
+      <p>Pasado el deadline, cualquier usuario ve el botón <strong>"🎲 Resolve Round Now"</strong> y puede llamar <code>resolve_campaign</code>. Alternativamente, el Browser Crank lo detecta en su intervalo de 10s y lo resuelve automáticamente usando la wallet del creador o cualquier Burner con gas. El contrato verifica que <code>unix_timestamp &gt;= deadline</code> on-chain.</p>
     </div>
   </div>
   <div class="step">
     <div class="step-n">3a</div>
     <div>
       <h4>Ganador con wallet conectada → <code>claim_prize</code></h4>
-      <p>Si la posición ganadora fue comprada con wallet Web3, el ganador ve el botón <strong>"⚡ Claim Prize"</strong> tanto en la Campaign Page como en su Dashboard. Firma <code>claim_prize</code> y recibe <code>prize_lamports + total_collected</code> directamente en su wallet. Requiere que el ganador firme la TX.</p>
+      <p>El ganador ve el botón <strong>"⚡ Claim Prize"</strong> tanto en la Campaign Page como en su Dashboard. Firma <code>claim_prize</code> y recibe <code>prize_lamports + total_collected</code> directamente en su wallet. El contrato verifica <code>pos.owner == signer</code> on-chain. Tras la reclamación, tanto <code>prize_lamports</code> como <code>total_collected</code> quedan en 0.</p>
     </div>
   </div>
   <div class="step">
     <div class="step-n">3b</div>
     <div>
-      <h4>Ganador CEX → <code>push_prize</code> (Automático)</h4>
-      <p>Si la posición fue comprada vía CEX, el sistema usa el <strong>Browser Crank</strong>. El Burner Wallet retiene 0.005 SOL de gas. En cuanto el ganador (o cualquier usuario) visita la web tras el deadline, el navegador detecta el premio y llama a <code>push_prize</code> automáticamente. El ganador recibe el premio sin haber tenido que conectar una wallet ni firmar nada.</p>
+      <h4>Ganador CEX → <code>push_prize</code> (completamente automático)</h4>
+      <p>Si la posición fue comprada vía CEX, el Browser Crank detecta <code>hasWinner=true</code> y <code>!claimed</code>, extrae <code>campaign.winnerWallet</code> (la pubkey del recipient registrada on-chain), y llama <code>push_prize</code> usando el Burner Wallet que aún tiene 0.005 SOL de crank reserve. El ganador recibe el premio sin haber conectado una wallet ni firmado nada. <code>push_prize</code> no requiere que el ganador sea signer — cualquier wallet puede ser <code>initiator</code>.</p>
     </div>
   </div>
   <div class="step">
     <div class="step-n">4</div>
     <div>
       <h4>Sin ganador → tesorería del creador</h4>
-      <p>Si la posición ganadora estaba vacía, aparece el botón <strong>"🏦 Move Funds to Treasury"</strong> para el creador en la Campaign Page y el Dashboard. Llama <code>route_no_winner_to_treasury</code>: transfiere <code>prize + collected</code> al <code>ProjectAccount</code> PDA y actualiza <code>treasury_lamports</code> on-chain.</p>
+      <p>Si la posición ganadora estaba vacía, el creador ve el botón <strong>"🏦 Move Funds to Treasury"</strong> en la Campaign Page y el Dashboard. Llama <code>route_no_winner_to_treasury</code>: transfiere <code>prize + collected</code> al <code>ProjectAccount</code> PDA y actualiza <code>treasury_lamports</code> de forma atómica on-chain. Si el creador no actúa, el SOL permanece en la Campaign PDA hasta que alguien llame esta instrucción.</p>
     </div>
   </div>
 </div>
 
 <div class="box purple">
-  <strong>Verificación on-chain del ganador CEX:</strong> La Campaign Page consulta <code>campaign.positions[winningPosition].owner</code> directamente del blockchain. Solo muestra el banner <em>"You won via Exchange payment!"</em> si ese valor coincide exactamente con el <code>recipientAddr</code> guardado en localStorage. Modificar localStorage no activa el banner porque la condición real viene del contrato — el campo <code>owner</code> solo puede escribirse via <code>buy_position</code> o <code>push_prize</code>.
+  <strong>Verificación on-chain del ganador CEX:</strong> La Campaign Page consulta <code>campaign.positions[winningPosition].owner</code> directamente del blockchain. Solo muestra el banner <em>"You won via Exchange payment!"</em> si ese valor coincide exactamente con el <code>recipientAddr</code> guardado en localStorage. El banner también muestra un badge verde <em>"✅ Verified on-chain: position owner matches your address"</em>. Modificar localStorage no activa el banner porque la condición real viene del campo <code>owner</code> on-chain — solo escribible via <code>buy_position</code>.
 </div>
 </div>
 
@@ -588,12 +709,22 @@ footer strong{color:var(--text2);font-weight:500}
 <div class="codeblock">
 <span class="c">// 1. Creator Registry — uno por wallet creadora · registra conteo de proyectos</span>
 <span class="k">seeds</span> = [<span class="s">"registry"</span>, creator_wallet]
+<span class="c">// Tamaño: 8 (discriminator) + 32 (creator Pubkey) + 8 (project_count u64) = 48 bytes</span>
 
 <span class="c">// 2. Project Account — uno por token lanzado · almacena treasury_lamports</span>
 <span class="k">seeds</span> = [<span class="s">"project"</span>, creator_wallet, project_index_as_u64_le8]
+<span class="c">// Tamaño: 8 + 32 + 8 + 32 + 60 + 80 + 12 + 8 + 8 = 248 bytes</span>
+<span class="c">// Campos: creator, project_index, token_mint, fee_mode_name[60], project_name[80],</span>
+<span class="c">//         token_symbol[12], campaign_count, treasury_lamports</span>
 
 <span class="c">// 3. Campaign Account (zero_copy) — una por ronda de funding · almacena 100 posiciones</span>
 <span class="k">seeds</span> = [<span class="s">"campaign"</span>, creator_wallet, project_index_le8, campaign_count_le8]
+<span class="c">// Tamaño total: 8 (disc) + 4918 (CampaignAccount) = 4926 bytes</span>
+<span class="c">// Campos: creator(32) + project_index(8) + campaign_index(8) + token_mint(32)</span>
+<span class="c">//       + prize_lamports(8) + position_price(8) + tokens_per_pos(8) + duration(8)</span>
+<span class="c">//       + deadline(8) + created_at(8) + status(1) + winning_pos(1) + _pad(6)</span>
+<span class="c">//       + winning_slot(8) + winner(32) + total_collected(8) + treasury_contribution(8)</span>
+<span class="c">//       + title[120] + description[600] + positions[PositionInfo; 100] (4000 bytes)</span>
 </div>
 
 <div class="box blue">
@@ -601,7 +732,7 @@ footer strong{color:var(--text2);font-weight:500}
 </div>
 
 <div class="box amber">
-  <strong>CampaignAccount = zero_copy (4 918 bytes):</strong> Supera el límite BPF de stack de 4 096 bytes. Se usa <code>#[account(zero_copy(unsafe))]</code> + <code>AccountLoader</code> — la cuenta se mapea directamente desde la memoria de la cuenta, nunca se copia al stack. Las <code>positions: [PositionInfo; 100]</code> (4 000 bytes) son la causa del tamaño.
+  <strong>CampaignAccount = zero_copy(unsafe) (4 918 bytes):</strong> Supera el límite BPF de stack de 4 096 bytes. Se usa <code>#[account(zero_copy(unsafe))]</code> + <code>AccountLoader&lt;'info, CampaignAccount&gt;</code> — la cuenta se mapea directamente desde la memoria de la cuenta (heap), nunca se copia al stack. Las <code>positions: [PositionInfo; 100]</code> (100 × 40 bytes = 4 000 bytes) son la causa del tamaño. <code>PositionInfo</code> es <code>#[repr(C)]</code> con <code>filled: u8 + _pad: [u8;7] + owner: Pubkey</code> = 40 bytes.
 </div>
 </div>
 
@@ -616,6 +747,7 @@ footer strong{color:var(--text2);font-weight:500}
 <span class="c">// Rust — lib.rs v0.2.1</span>
 <span class="k">pub fn</span> deposit_to_treasury(ctx: Context&lt;DepositToTreasury&gt;, amount_lamports: u64) -&gt; Result&lt;()&gt; {
   require_keys_eq!(project.creator, creator.key(), BCFError::Unauthorized);
+  require!(amount_lamports &gt; 0, BCFError::InsufficientFunds);
   <span class="c">// CPI: SystemProgram::transfer creator → project PDA</span>
   system_program::transfer(cpi_ctx, amount_lamports)?;
   <span class="c">// Actualiza el contador on-chain de forma atómica</span>
@@ -635,11 +767,87 @@ footer strong{color:var(--text2);font-weight:500}
 </table>
 
 <div class="box blue">
-  <strong>En el Dashboard:</strong> Cada tarjeta de token muestra el botón <strong>⬇ Fund Treasury from Wallet</strong>. Al hacer clic, un modal muestra el balance actual de la tesorería vs. el balance de la wallet, con presets rápidos (0.1 / 0.5 / 1 / 2 SOL). Al confirmar, se firma la instrucción <code>depositToTreasury</code> on-chain. Si la TX falla, no hay cambio de estado. El creador puede después reinvertir ese SOL con el botón 🔥 Reinvest o retirarlo con ↑ Withdraw.
+  <strong>En el Dashboard — Modal "⬇ Fund Treasury from Wallet":</strong> Muestra balance actual de la tesorería vs balance de la wallet conectada. Presets rápidos: 0.1 / 0.5 / 1 / 2 SOL + campo numérico libre. Al confirmar, llama <code>depositToTreasuryOnChain()</code> que firma la instrucción on-chain. Si la TX falla, no hay cambio de estado. El creador puede luego reinvertir ese SOL con 🔥 Reinvest o retirarlo con ↑ Withdraw.
+</div>
 </div>
 
-<div class="box amber">
-  <strong>⚠ Requiere redeploy del contrato:</strong> <code>deposit_to_treasury</code> es nueva en v0.2.1. Ejecutar <code>bash scripts/deploy.sh</code> (DevNet) o <code>bash scripts/deploy-mainnet.sh</code> compila el <code>lib.rs</code> completo, despliega el nuevo binario y auto-parchea el Program ID en <code>.env</code>, <code>constants.js</code> e <code>idl.json</code>.
+<!-- 09.8 DASHBOARD PROFUNDO -->
+<div class="sec">
+<div class="sec-label">09.8 — Dashboard — Análisis en profundidad</div>
+<h2>DashboardPage — Todos los modales y funciones</h2>
+
+<p>El Dashboard se carga en <code>/dashboard</code> y requiere wallet conectada. Ejecuta <code>refresh()</code> al montar que lanza en paralelo: fetch de proyectos, campañas, balance SOL, market data por mint y claimable fees. Hay un timeout de 18 segundos para evitar estados de carga infinita.</p>
+
+<h3 style="margin-top:22px;margin-bottom:10px">Header del Dashboard</h3>
+<p>Muestra la dirección truncada de la wallet conectada con botón de copia. A la derecha: balance en SOL (DevNet/Mainnet) con botón de airdrop si es DevNet, y el total acumulado de tesorería en todos los proyectos combinados.</p>
+
+<h3 style="margin-top:22px;margin-bottom:10px">Sección "My Tokens" — Tarjeta de proyecto</h3>
+<p>Cada token tiene una tarjeta clickeable que filtra las campañas de abajo a ese proyecto. La tarjeta incluye:</p>
+<table class="tbl">
+<thead><tr><th>Elemento</th><th>Descripción</th></tr></thead>
+<tbody>
+<tr><td>Logo + nombre + symbol</td><td>Logo desde Bags API (si disponible), nombre del proyecto, símbolo con $ prefix, project index badge, enlace a bags.fm</td></tr>
+<tr><td>Badge de estado</td><td><strong>✅ Mainnet</strong> (verde) si <code>isRealMint()</code>, <strong>⚠ Simulated</strong> (ámbar) si es mint simulado de DevNet</td></tr>
+<tr><td>Market data en vivo</td><td>Precio ($), Volumen 24h ($), Holders — obtenidos de <code>GET /token/{mint}</code> de la Bags API. Cache de 10 min en Map en memoria.</td></tr>
+<tr><td>Lifetime Bags Fees</td><td>Total acumulado de fees de trading via <code>GET /analytics/lifetime-fees?tokenMint={mint}</code>. Mostrado en SOL con 4 decimales.</td></tr>
+<tr><td>Tesorería on-chain</td><td>Balance en SOL del ProjectAccount PDA. Botones: ↑ Withdraw (si balance &gt; 0) y ⬇ Fund Treasury from Wallet.</td></tr>
+<tr><td>Botón Reinvest</td><td>🔥 Reinvest in ${symbol} — abre el modal Reinvest. Solo visible si treasury &gt; 0.</td></tr>
+<tr><td>Acciones</td><td>+ Campaign (link a /create-campaign?project=N), ▼ Campaigns (toggle filtro), y si isRealMint: ⚙️ Fee Sharing + 💰 Claim Fees</td></tr>
+</tbody>
+</table>
+
+<h3 style="margin-top:22px;margin-bottom:10px">Sección "Campaigns" — Filtros y agrupación</h3>
+<p>Cuando hay más de un proyecto, aparecen tabs de filtro: "All (N)" + uno por cada token "$SYMBOL (N)". Las campañas se agrupan en tres <code>CampaignSection</code>: 🔥 Active, ⏳ Upcoming (pending), 📊 Completed (settled/finished). Cada tarjeta de campaña muestra: estado, título (link a la página), tiempo restante, posiciones vendidas, SOL collected, SOL prize, y botones de acción según estado.</p>
+
+<h3 style="margin-top:22px;margin-bottom:10px">Modal "🔥 Reinvest Treasury — Flywheel"</h3>
+<div class="steps">
+  <div class="step">
+    <div class="step-n">1</div>
+    <div>
+      <h4>Concepto Flywheel</h4>
+      <p>Treasury → compra ${symbol} en Bags → precio sube → campañas más atractivas → treasury más grande → reinversión mayor. El modal muestra esta explicación con un diagrama de texto.</p>
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-n">2</div>
+    <div>
+      <h4>Get Quote</h4>
+      <p>El usuario ingresa el amount de SOL a reinvertir (campo numérico, max = treasury balance). Al hacer clic en "Get Quote", llama <code>getReinvestQuote(lamports, tokenMint)</code> → <code>GET /trade/quote?inputMint=SOL&amp;outputMint={mint}&amp;amount={lamports}&amp;slippageMode=auto</code>. El quote muestra: SOL a gastar, tokens estimados a recibir, y price impact (rojo si &gt;2%).</p>
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-n">3</div>
+    <div>
+      <h4>Confirm — 2 transacciones en secuencia</h4>
+      <p><strong>TX 1:</strong> <code>withdrawTreasuryOnChain()</code> — retira el SOL del ProjectAccount PDA a la wallet del creador.<br><strong>TX 2:</strong> <code>executeReinvest()</code> — llama <code>POST /trade/swap</code> con el quoteResponse, obtiene la TX de swap, la firma y la envía a <strong>Mainnet</strong> (independientemente de la red BCF activa). El creador ve un toast por cada paso.</p>
+    </div>
+  </div>
+</div>
+
+<h3 style="margin-top:22px;margin-bottom:10px">Modal "⚙️ Manage Fee Sharing"</h3>
+<p>Solo aparece para tokens <code>isRealMint</code>. Al abrir, carga la config actual via <code>getFeeShareAdminList(walletPubkey)</code>. Dos tabs:</p>
+<div class="cols2">
+  <div class="card">
+    <h3>Tab: Update Claimers</h3>
+    <p>Lista editable de claimers (wallet + basis points). Suma en tiempo real en verde (✓) o rojo (error). Botón "+ Add claimer" hasta 100. Al confirmar: llama <code>updateFeeShareConfig()</code> → <code>POST /fee-share/admin/update-config</code> con <code>{baseMint, claimersArray, basisPointsArray, payer}</code>. Cada TX de la respuesta se firma y envía a Mainnet.</p>
+  </div>
+  <div class="card">
+    <h3>Tab: Transfer Admin</h3>
+    <p>Campo para ingresar la nueva wallet admin. Advertencia en ámbar: "Transferring admin gives full fee management rights... cannot be undone". Al confirmar: llama <code>transferFeeShareAdmin()</code> → <code>POST /fee-share/admin/transfer-tx</code> → firma y envía la TX en Mainnet.</p>
+  </div>
+</div>
+
+<h3 style="margin-top:22px;margin-bottom:10px">Modal "💰 Claim Bags Fees"</h3>
+<p>Al abrir: llama <code>getClaimTransactionsV3(walletPubkey, tokenMint)</code> → <code>POST /fee-claiming/claim-transactions</code> con <code>{wallet, baseMint}</code>. Muestra cuántas TXs hay listas. Si no hay fees: mensaje "No claimable fees at this time". Al confirmar: <code>executeClaimTransactions()</code> firma y envía cada TX en secuencia. Muestra "N/M claim TXs confirmed!".</p>
+
+<h3 style="margin-top:22px;margin-bottom:10px">Sorting de campañas</h3>
+<p>Todas las vistas de campañas (Explore + Dashboard) usan el mismo algoritmo de <code>campaignSorting.js</code>:</p>
+<div class="codeblock">
+<span class="c">// 4 niveles de prioridad — campaignSorting.js</span>
+<span class="n">Nivel 1</span>: Por estado → active(1) &gt; pending(2) &gt; settled/finished(3)
+<span class="n">Nivel 2</span>: Mismo estado → por start_ts (más reciente primero)
+<span class="n">Nivel 3</span>: Sin start_ts → por created_at (más reciente primero)
+<span class="n">Nivel 4</span>: Sin fechas → alfabético por title/name
 </div>
 </div>
 
@@ -651,16 +859,30 @@ footer strong{color:var(--text2);font-weight:500}
 <table class="tbl">
 <thead><tr><th>Instrucción</th><th>Quién puede llamarla</th><th>Efecto</th></tr></thead>
 <tbody>
-<tr><td><code>initialize_project</code></td><td>Creator (signer)</td><td>Crea <code>CreatorRegistry</code> (si no existe) + <code>ProjectAccount</code>. Incrementa <code>project_count</code>.</td></tr>
-<tr><td><code>create_campaign</code></td><td>Creator (signer)</td><td>Crea <code>CampaignAccount</code> en estado Pending. Incrementa <code>campaign_count</code>.</td></tr>
-<tr><td><code>fund_campaign</code></td><td>Creator (signer)</td><td>Deposita el prize SOL en la CampaignAccount PDA. Estado → Active. Fija el deadline.</td></tr>
-<tr><td><code>buy_position(index)</code></td><td>Cualquier wallet / Burner</td><td>Transfiere <code>position_price</code> SOL del buyer al CampaignAccount. Asigna <code>pos.owner = recipient</code>.</td></tr>
-<tr><td><code>resolve_campaign</code></td><td>Cualquiera (sin permiso)</td><td>Solo si deadline pasado. Lee SlotHashes sysvar → elige posición ganadora. Estado → Settled.</td></tr>
-<tr><td><code>claim_prize</code></td><td>Ganador (signer obligatorio)</td><td>Si <code>pos.owner == signer</code>: transfiere prize + collected al ganador. Solo para ganadores con wallet.</td></tr>
-<tr><td><code>push_prize</code></td><td>Cualquiera como initiator</td><td>Igual que claim_prize pero el ganador no firma. Permite que terceros empujen el premio a ganadores CEX.</td></tr>
-<tr><td><code>route_no_winner_to_treasury</code></td><td>Creator (verificado)</td><td>Si posición ganadora estaba vacía: transfiere prize + collected al ProjectAccount. Incrementa <code>treasury_lamports</code>.</td></tr>
-<tr><td><code>deposit_to_treasury</code> <span style="color:var(--green);font-size:.7rem">NEW v0.2.1</span></td><td>Creator (signer)</td><td>CPI desde wallet del creador → ProjectAccount PDA. Incrementa <code>treasury_lamports</code> on-chain.</td></tr>
-<tr><td><code>withdraw_treasury</code></td><td>Creator (signer)</td><td>Transfiere N lamports del ProjectAccount PDA → wallet del creador. Decrementa <code>treasury_lamports</code>.</td></tr>
+<tr><td><code>initialize_project</code></td><td>Creator (signer)</td><td>Crea <code>CreatorRegistry</code> (init_if_needed) + <code>ProjectAccount</code>. Incrementa <code>project_count</code>. Emite <code>ProjectCreated</code>.</td></tr>
+<tr><td><code>create_campaign</code></td><td>Creator (signer)</td><td>Crea <code>CampaignAccount</code> en estado Pending (status=0). Incrementa <code>campaign_count</code>. <code>winning_position = 255</code> (sentinel de no resuelto). Emite <code>CampaignCreated</code>.</td></tr>
+<tr><td><code>fund_campaign</code></td><td>Creator (signer)</td><td>CPI de <code>prize_lamports</code> SOL del creator → CampaignAccount. Status → Active (1). Fija <code>deadline = unix_timestamp + duration_seconds</code>. Emite <code>CampaignActivated</code>.</td></tr>
+<tr><td><code>buy_position(index)</code></td><td>Cualquier wallet / Burner Wallet</td><td>Transfiere <code>position_price_lamports</code> del buyer → CampaignAccount. Asigna <code>pos.filled=1, pos.owner=recipient</code>. Incrementa <code>total_collected</code> y <code>treasury_contribution</code>. Emite <code>PositionPurchased</code>.</td></tr>
+<tr><td><code>resolve_campaign</code></td><td>Cualquiera (sin permiso especial)</td><td>Requiere deadline pasado. Lee SlotHashes sysvar → <code>u64 % 100</code> = posición ganadora. Status → Settled (2). Emite <code>CampaignResolved</code>.</td></tr>
+<tr><td><code>claim_prize</code></td><td>Ganador (signer obligatorio)</td><td>Verifica <code>pos.owner == signer</code>. Transfiere <code>prize + collected</code> al ganador via lamport borrow. Pone ambos a 0. Para ganadores con wallet conectada.</td></tr>
+<tr><td><code>push_prize</code></td><td>Cualquiera como initiator (signer)</td><td>Igual que claim_prize pero el ganador NO firma. Verifica <code>pos.owner == winner account</code>. Pone prize y collected a 0. Diseñado para auto-payout CEX. Emite lamport transfer directo.</td></tr>
+<tr><td><code>route_no_winner_to_treasury</code></td><td>Creator (verificado por seeds)</td><td>Si posición ganadora estaba vacía (filled=0). Transfiere prize + collected al ProjectAccount. Incrementa <code>treasury_lamports</code>. Pone ambos a 0 en campaign.</td></tr>
+<tr><td><code>deposit_to_treasury</code> <span class="new-tag">NEW v0.2.1</span></td><td>Creator (signer)</td><td>CPI desde wallet del creador → ProjectAccount PDA. Incrementa <code>treasury_lamports</code> on-chain. Emite <code>TreasuryDeposit</code>.</td></tr>
+<tr><td><code>withdraw_treasury</code></td><td>Creator (signer)</td><td>Transfiere N lamports del ProjectAccount PDA → wallet del creador via lamport borrow. Decrementa <code>treasury_lamports</code>. Emite <code>TreasuryWithdrawal</code>.</td></tr>
+</tbody>
+</table>
+
+<h3 style="margin-top:22px;margin-bottom:10px">Eventos on-chain emitidos</h3>
+<table class="tbl">
+<thead><tr><th>Evento</th><th>Campos</th></tr></thead>
+<tbody>
+<tr><td><code>ProjectCreated</code></td><td>creator, project_index, token_mint, timestamp</td></tr>
+<tr><td><code>CampaignCreated</code></td><td>campaign, creator, project_index, campaign_index, prize_lamports, position_price_lamports</td></tr>
+<tr><td><code>CampaignActivated</code></td><td>campaign, deadline</td></tr>
+<tr><td><code>PositionPurchased</code></td><td>campaign, position_index, buyer, price_lamports, tokens_received</td></tr>
+<tr><td><code>CampaignResolved</code></td><td>campaign, winning_position, has_winner, winner, total_pot, winning_slot</td></tr>
+<tr><td><code>TreasuryDeposit</code></td><td>project, creator, project_index, amount_lamports, new_total</td></tr>
+<tr><td><code>TreasuryWithdrawal</code></td><td>project, creator, project_index, amount_lamports, remaining</td></tr>
 </tbody>
 </table>
 
@@ -678,7 +900,7 @@ footer strong{color:var(--text2);font-weight:500}
 
 <div class="box blue" style="margin-bottom:18px">
   <strong>Arquitectura de dos capas simultáneas:</strong> BCF siempre usa dos redes al mismo tiempo, sin importar el valor de <code>VITE_NETWORK</code>.<br><br>
-  <strong>Capa 1 — Bags (siempre Mainnet):</strong> El token, fee-share, trading y claim de fees van siempre a <code>api.mainnet-beta.solana.com</code>. Hardcodeado en <code>bags.js</code> como <code>mainnetConnection</code>.<br><br>
+  <strong>Capa 1 — Bags (siempre Mainnet):</strong> El token, fee-share, trading y claim de fees van siempre a <code>api.mainnet-beta.solana.com</code>. Hardcodeado en <code>bags.js</code> como <code>mainnetConnection = new Connection("https://api.mainnet-beta.solana.com")</code>.<br><br>
   <strong>Capa 2 — BCF Program (controlado por <code>VITE_NETWORK</code>):</strong> Los <code>ProjectAccount</code>, <code>CampaignAccount</code>, treasury y resolución van al cluster configurado — DevNet para desarrollo, Mainnet para producción.
 </div>
 
@@ -686,14 +908,17 @@ footer strong{color:var(--text2);font-weight:500}
 <thead><tr><th>Característica</th><th><span class="badge dev">● DevNet</span></th><th><span class="badge main">● Mainnet</span></th></tr></thead>
 <tbody>
 <tr><td>Contrato BCF</td><td><span class="tick">✓</span> Idéntico · deploy.sh</td><td><span class="tick">✓</span> Idéntico · deploy-mainnet.sh</td></tr>
-<tr><td>Token en Bags</td><td><span class="warn">⚠</span> Simulado (mint ficticio si Bags falla)</td><td><span class="tick">✓</span> Bags Mainnet · Meteora DBC real</td></tr>
+<tr><td>Token en Bags</td><td><span class="warn">⚠</span> Simulado (mint ficticio si Bags falla) · badge "⚠ Simulated"</td><td><span class="tick">✓</span> Bags Mainnet · Meteora DBC real · badge "✅ Mainnet"</td></tr>
 <tr><td>Campañas y posiciones</td><td><span class="tick">✓</span> SOL de faucet · misma mecánica</td><td><span class="tick">✓</span> SOL real</td></tr>
 <tr><td>CEX Burner Wallet</td><td><span class="tick">✓</span> Funciona igual</td><td><span class="tick">✓</span> Funciona igual</td></tr>
+<tr><td>Browser Crank</td><td><span class="tick">✓</span> Funciona igual (auto-resolve + push)</td><td><span class="tick">✓</span> Funciona igual</td></tr>
 <tr><td>Polling on-chain</td><td><span class="tick">✓</span> Contra DevNet RPC</td><td><span class="tick">✓</span> Contra Mainnet RPC</td></tr>
 <tr><td>Aleatoriedad slot hash</td><td><span class="tick">✓</span> Slots de DevNet</td><td><span class="tick">✓</span> Slots de Mainnet</td></tr>
-<tr><td>Reinvestment flywheel</td><td><span class="warn">⚠</span> SOL DevNet sin valor en Bags</td><td><span class="tick">✓</span> Bags Trade API · compra real</td></tr>
+<tr><td>Market data (price/vol/holders)</td><td><span class="warn">⚠</span> Solo si mint es real en Bags</td><td><span class="tick">✓</span> Datos en vivo de Bags API</td></tr>
+<tr><td>Reinvestment flywheel</td><td><span class="warn">⚠</span> SOL DevNet sin valor en Bags Mainnet</td><td><span class="tick">✓</span> Bags Trade API · compra real</td></tr>
 <tr><td>Bags trading fees</td><td>— solo en Mainnet</td><td><span class="tick">✓</span> /fee-claiming/claim-transactions</td></tr>
-<tr><td>Airdrop SOL faucet</td><td><span class="tick">✓</span> Botón en Dashboard y modal de campaña</td><td><span class="miss">✗</span> Deshabilitado</td></tr>
+<tr><td>Fee sharing management</td><td>— solo para mints reales</td><td><span class="tick">✓</span> /fee-share/admin/* </td></tr>
+<tr><td>Airdrop SOL faucet</td><td><span class="tick">✓</span> Botón en Dashboard (+5 SOL) y modales (+2 SOL / +5 SOL)</td><td><span class="miss">✗</span> Deshabilitado</td></tr>
 <tr><td>Costo de deploy</td><td><span class="tick">✓</span> Gratis (faucet)</td><td><span class="warn">~2.3 SOL real</span></td></tr>
 </tbody>
 </table>
@@ -712,43 +937,45 @@ footer strong{color:var(--text2);font-weight:500}
   <div class="card">
     <div class="card-icon">🚀</div>
     <h3>Token Launch</h3>
-    <p>4 pasos: <code>create-token-info</code> (FormData) → <code>fee-share/config</code> → <code>create-launch-transaction</code> → firma Mainnet. Fallback automático a mint simulado si la API no responde.</p>
+    <p>4 pasos: <code>create-token-info</code> (FormData, NO Content-Type header) → <code>fee-share/config</code> (JSON) → <code>create-launch-transaction</code> → firma Mainnet. La respuesta de <code>create-launch-transaction</code> es un <code>string</code> base58 de VersionedTransaction. Fallback automático a mint simulado si la API no responde o el usuario cancela.</p>
   </div>
   <div class="card">
     <div class="card-icon">💸</div>
     <h3>Fee Share Admin</h3>
-    <p>Post-lanzamiento: <code>GET /fee-share/admin/list</code> · <code>POST /fee-share/admin/update-config</code> (cambia claimers/%) · <code>POST /fee-share/admin/transfer-tx</code> (transfiere autoridad).</p>
+    <p>Post-lanzamiento: <code>GET /fee-share/admin/list?wallet={pubkey}</code> · <code>POST /fee-share/admin/update-config</code> (cambia claimers/%) · <code>POST /fee-share/admin/transfer-tx</code> (transfiere autoridad a nueva wallet). Todos los endpoints requieren header <code>x-api-key</code>.</p>
   </div>
   <div class="card">
     <div class="card-icon">💰</div>
     <h3>Claim Fees</h3>
-    <p><code>POST /fee-claiming/claim-transactions</code> (v3) para reclamar fees de trading acumulados. Se firman individualmente desde el Dashboard. <code>GET /fee-claiming/claimable-positions</code> para ver cuánto hay acumulado.</p>
+    <p><code>GET /fee-claiming/claimable-positions?wallet={pubkey}</code> para ver posiciones claimables. <code>POST /fee-claiming/claim-transactions</code> con <code>{wallet, baseMint}</code> para obtener TXs listas (v3). Se firman individualmente en <code>executeClaimTransactions()</code>.</p>
   </div>
   <div class="card">
     <div class="card-icon">🔄</div>
     <h3>Trade API — Flywheel</h3>
-    <p><code>GET /trade/quote</code> para obtener cotización SOL → token. <code>POST /trade/swap</code> para crear la TX de compra. Siempre contra Mainnet Bags (Meteora DBC) independiente de la red BCF.</p>
+    <p><code>GET /trade/quote?inputMint=SOL&amp;outputMint={mint}&amp;amount={lamports}&amp;slippageMode=auto</code> para obtener cotización. <code>POST /trade/swap</code> con <code>{quoteResponse, userPublicKey}</code> para crear TX de compra. Siempre contra Mainnet Bags independiente de la red BCF.</p>
   </div>
   <div class="card">
     <div class="card-icon">📊</div>
     <h3>Analytics</h3>
-    <p><code>GET /analytics/lifetime-fees</code> · <code>GET /analytics/creators</code> · <code>GET /analytics/claim-stats</code>. Mostrados en el Dashboard con caché de 10 min por mint.</p>
+    <p><code>GET /analytics/lifetime-fees?tokenMint={mint}</code> (fees totales acumuladas) · <code>GET /analytics/creators?tokenMint={mint}</code> · <code>GET /analytics/claim-stats?tokenMint={mint}</code>. Cache de 10 min en Map en memoria en <code>programClient.js</code>. Mostrados en el Dashboard.</p>
   </div>
   <div class="card">
     <div class="card-icon">📈</div>
     <h3>Dexscreener</h3>
-    <p><code>GET /dexscreener/order/availability</code> para verificar si el token puede listarse. <code>POST /dexscreener/order</code> para crear la orden. Disponible en <code>bags.js</code>, integración UI pendiente.</p>
+    <p><code>GET /dexscreener/order/availability?tokenMint={mint}</code> para verificar disponibilidad. <code>POST /dexscreener/order</code> con <code>{payer, tokenMint, orderType}</code> para crear orden. Funciones implementadas en <code>bags.js</code> — integración UI en el Dashboard pendiente.</p>
   </div>
   <div class="card">
     <div class="card-icon">🏢</div>
     <h3>Incorporation</h3>
-    <p>Flujo de 3 pasos: <code>POST /incorporate/payment</code> → <code>POST /incorporate</code> (datos legales + founders) → <code>POST /incorporate/start</code>. Accesible post-lanzamiento desde el Dashboard.</p>
+    <p>Flujo de 3 pasos: <code>POST /incorporate/payment</code> (genera TX de pago) → <code>POST /incorporate</code> (datos: projectName, tokenAddress, founders, incorporationShareBasisPoint, preferredCompanyNames, category, twitterHandle) → <code>POST /incorporate/start</code>.</p>
   </div>
 </div>
 
 <div class="box purple" style="margin-top:18px">
   <strong>Base URL:</strong> <code>VITE_BAGS_API_BASE</code> = <code>https://public-api-v2.bags.fm/api/v1</code><br>
   <strong>Auth:</strong> Header <code>x-api-key: VITE_BAGS_API_KEY</code> en todas las llamadas.<br>
+  <strong>Health check:</strong> <code>pingBags()</code> llama <code>https://public-api-v2.bags.fm/ping</code> → espera <code>{message: "pong"}</code>. Se muestra en el badge del Home.<br>
+  <strong>Token market data:</strong> <code>GET /token/{mint}</code> devuelve <code>price, volume24h, marketCap, holders, symbol, name, image</code>. Mapeado en <code>getTokenMarketData()</code>.<br>
   <strong>Bags siempre en Mainnet:</strong> <code>mainnetConnection</code> en <code>bags.js</code> apunta siempre a <code>api.mainnet-beta.solana.com</code> — independiente de <code>VITE_NETWORK</code>.
 </div>
 </div>
@@ -761,15 +988,79 @@ footer strong{color:var(--text2);font-weight:500}
 <table class="tbl">
 <thead><tr><th>Constante</th><th>Valor</th><th>Descripción</th></tr></thead>
 <tbody>
-<tr><td><code>TREASURY_FEE_PCT</code></td><td>2</td><td>% de cada compra de posición que va a la tesorería del proyecto. Coincide con <code>TREASURY_BPS = 200</code> en el Rust.</td></tr>
-<tr><td><code>TOKENS_PER_SOL</code></td><td>1 000 000</td><td>Ratio de distribución de tokens. 1 SOL de precio = 1M tokens por posición.</td></tr>
-<tr><td><code>CEX_FEE_BUFFER_SOL</code></td><td>0.010</td><td>Buffer extra solicitado al usuario CEX. Cubre comisiones de exchange y gas de red para compra y sorteo automático.</td></tr>
-<tr><td><code>CEX_CRANK_RESERVE_SOL</code></td><td>0.005</td><td>SOL que se queda en el Burner Wallet tras la compra para actuar como "gas" para el auto-sorteo posterior.</td></tr>
-<tr><td><code>CEX_MIN_REFUND_LAMPORTS</code></td><td>10 000</td><td>Umbral mínimo de reembolso (~0.00001 SOL). Si el sobrante es menor, no se genera TX de devolución.</td></tr>
-<tr><td><code>SOL_PRICE_USDC</code></td><td>Live</td><td>Precio SOL en USD. Se actualiza cada 60 s desde la API de Binance (<code>SOLUSDT</code>). Fallback: 145 USD.</td></tr>
-<tr><td><code>WATCHER_URL</code></td><td><code>/watcher</code></td><td>Exportada por compatibilidad histórica. No se usa actualmente en ningún componente — el flujo CEX es 100% client-side. El proxy de Vite en <code>vite.config.js</code> devuelve 503 JSON si nada escucha en el puerto 3001.</td></tr>
+<tr><td><code>NETWORK</code></td><td><code>VITE_NETWORK || 'devnet'</code></td><td>Controla la red BCF. <code>'devnet'</code> o <code>'mainnet'</code>. Define <code>IS_MAINNET</code> y <code>IS_DEVNET</code> derivados.</td></tr>
+<tr><td><code>BCF_PROGRAM_ID</code></td><td><code>ELarLMHYVxR2TndqEc6kHUSvwRyZUPHJ5BHFcD7yQtcJ</code></td><td>ID del programa Anchor desplegado. Se parchea automáticamente por deploy.sh. Tiene variantes _DEVNET y _MAINNET independientes.</td></tr>
+<tr><td><code>TREASURY_FEE_PCT</code></td><td>2</td><td>% de cada compra de posición que se rastrea como treasury contribution. Coincide con <code>TREASURY_BPS = 200</code> en el Rust. El SOL físico permanece en la CampaignAccount hasta resolve.</td></tr>
+<tr><td><code>TOKENS_PER_SOL</code></td><td>1 000 000</td><td>Ratio de distribución. <code>tokensPerPosition = floor(positionPriceSOL × 1_000_000)</code>. Por ej: precio 0.1 SOL → 100 000 tokens por posición.</td></tr>
+<tr><td><code>SOL_PRICE_USDC</code></td><td>Live (fallback 145)</td><td>Precio SOL en USD. Se actualiza cada 60s desde Binance API (<code>SOLUSDT</code>). Expone helpers <code>toUSDC(sol)</code> y <code>fromUSDC(usdc)</code> usados en todos los displays de precio.</td></tr>
+<tr><td><code>CEX_FEE_BUFFER_SOL</code></td><td>0.010</td><td>Buffer extra solicitado al usuario CEX. Cubre comisiones de exchange + gas de compra + gas de reembolso + crank reserve.</td></tr>
+<tr><td><code>CEX_CRANK_RESERVE_SOL</code></td><td>0.005</td><td>SOL que se retiene en el Burner post-compra para actuar como gas del Browser Crank (auto-resolve + push_prize).</td></tr>
+<tr><td><code>CEX_MIN_GAS_SOL</code></td><td>0.001</td><td>Gas mínimo absoluto para proceder con <code>buy_position</code>. Si el exchange tomó una comisión alta pero aún hay esto, se procede.</td></tr>
+<tr><td><code>CEX_MIN_REFUND_LAMPORTS</code></td><td>10 000</td><td>Umbral mínimo de reembolso (~0.00001 SOL). Si el sobrante es menor, no se genera TX de devolución (dust).</td></tr>
+<tr><td><code>TOTAL_POSITIONS</code></td><td>100</td><td>Cantidad fija de posiciones por campaña (00–99). Hardcodeado también en Rust como <code>POSITIONS: usize = 100</code>.</td></tr>
+<tr><td><code>WATCHER_URL</code></td><td><code>/watcher</code></td><td>Exportada por compatibilidad. No se usa activamente — el flujo CEX es 100% client-side. El proxy en vite.config.js devuelve 503 JSON si nada escucha en localhost:3001.</td></tr>
+<tr><td><code>SOL_MINT</code></td><td><code>So111…112</code></td><td>Wrapped SOL mint address. Usado en el Trade API quote como inputMint.</td></tr>
+<tr><td><code>USDC_MINT</code></td><td><code>EPjFW…t1v</code></td><td>USDC mint address Mainnet. Disponible como constante (referencia, no usado en el flujo principal actualmente).</td></tr>
 </tbody>
 </table>
+
+<h3 style="margin-top:22px;margin-bottom:10px">Duraciones disponibles para campañas</h3>
+<p>El campo de duración en CreateCampaignPage ofrece: 1 hora (demo), 6 horas, 24 horas, 3 días (72h), 7 días (168h). El máximo on-chain es 30 días (<code>MAX_DURATION = 30 × 86_400</code>).</p>
+
+<h3 style="margin-top:22px;margin-bottom:10px">Categorías de proyecto (CATEGORIES)</h3>
+<p>8 categorías para campañas y tokens: ⚡ Tech &amp; Dev, 🎨 Art &amp; Design, 🎵 Music, 🎮 Games, 🌐 Community, 💎 DeFi Protocol, 📹 Content, ✨ Other.</p>
+
+<h3 style="margin-top:22px;margin-bottom:10px">Categorías de incorporación (INCORPORATION_CATEGORIES)</h3>
+<p>9 categorías aceptadas por la Bags API para el proceso de incorporation: AI, DEFI, INFRA, GAMING, NFT, MEME, RWA, DEPIN, LEGAL.</p>
+
+<h3 style="margin-top:22px;margin-bottom:10px">Presets de Initial Buy (INITIAL_BUY_PRESETS_SOL)</h3>
+<p>Botones rápidos en el Step 4 de creación de token: [0 (Skip), 0.1, 0.5, 1, 2.5] SOL. También hay campo numérico libre.</p>
+</div>
+
+<!-- 13.5 LOCALSTORAGE -->
+<div class="sec">
+<div class="sec-label">13.5 — LocalStorage — Persistencia cliente</div>
+<h2>Todas las claves de localStorage usadas por BCF</h2>
+
+<table class="tbl">
+<thead><tr><th>Clave</th><th>Módulo</th><th>Contenido</th><th>Vida útil</th></tr></thead>
+<tbody>
+<tr>
+  <td><code>bcf_burner_{campaignPDA}_{positionIndex}</code></td>
+  <td><code>CampaignPage.jsx</code></td>
+  <td>JSON array de la <code>secretKey</code> (Uint8Array) del Burner Wallet para esa (campaña × posición). Permite al browser reconstruir el keypair en recargas.</td>
+  <td>Se elimina si balance cae &lt; 90% del crank reserve (0.0045 SOL). Se conserva con gas para actuar como Browser Crank.</td>
+</tr>
+<tr>
+  <td><code>bcf_cex_positions_v1</code></td>
+  <td><code>CampaignPage.jsx</code></td>
+  <td>Array JSON de objetos <code>{campaignId, positionIndex, recipientAddr, campaignTitle, tokenSymbol, positionPriceSOL, confirmedAt}</code>. Hint local para mostrar el banner de ganador CEX.</td>
+  <td>Persistente. No se elimina automáticamente. Solo es un hint — la fuente de verdad es siempre el blockchain.</td>
+</tr>
+<tr>
+  <td><code>bcf_real_mints</code></td>
+  <td><code>bags.js</code></td>
+  <td>Array JSON de strings de mint addresses que fueron lanzados exitosamente en Bags Mainnet. Usado por <code>isRealMint(mint)</code> para el badge ✅/⚠ del Dashboard.</td>
+  <td>Persistente. Se añade con <code>markMintAsReal(mint)</code> en cada launch exitoso. No se elimina automáticamente.</td>
+</tr>
+<tr>
+  <td><code>bcf_tokens_v1</code></td>
+  <td><code>store.js</code></td>
+  <td>Array JSON de tokens creados (incluye mints simulados de DevNet). Metadatos: name, symbol, description, imageUrl, feeModeId, creatorWallet, treasury.balanceSOL, etc.</td>
+  <td>Persistente. La capa de simulación del frontend. En Mainnet real, los datos on-chain son la fuente de verdad.</td>
+</tr>
+<tr>
+  <td><code>bcf_campaigns_v1</code></td>
+  <td><code>store.js</code></td>
+  <td>Array JSON de campañas simuladas. Para DevNet testing sin contrato desplegado. Incluye todas las posiciones (array de 100 elementos), estado, deadline, etc.</td>
+  <td>Persistente. Solo relevante cuando no hay acceso al programa on-chain.</td>
+</tr>
+</tbody>
+</table>
+
+<div class="box amber">
+  <strong>Seguridad del localStorage:</strong> Ninguna clave de localStorage tiene valor de seguridad para el protocolo. <code>bcf_cex_positions_v1</code> es solo un hint visual — no puede hacer ganar a nadie. <code>bcf_burner_*</code> contiene claves privadas efímeras de valor mínimo (0.005 SOL de gas). El campo <code>pos.owner</code> on-chain es la única fuente de verdad para premios.
+</div>
 </div>
 
 <!-- 14 QUICKSTART -->
@@ -782,7 +1073,7 @@ footer strong{color:var(--text2);font-weight:500}
 <span class="c"># 1. Instalar dependencias</span>
 npm install
 
-<span class="c"># 2. Configurar .env (copiar de .env.example)</span>
+<span class="c"># 2. Configurar .env</span>
 VITE_BAGS_API_KEY=bags_prod_...
 VITE_BAGS_API_BASE=https://public-api-v2.bags.fm/api/v1
 VITE_NETWORK=<span class="v">devnet</span>
@@ -798,7 +1089,7 @@ bash scripts/deploy.sh
 <span class="c"># 3b. Después del primer deploy — solo frontend</span>
 npm run dev
 <span class="c"># → Vite dev server en http://localhost:5173</span>
-<span class="c"># → El flujo CEX funciona sin ningún proceso adicional (serverless)</span>
+<span class="c"># → El flujo CEX + Browser Crank funciona sin ningún proceso adicional (serverless)</span>
 </div>
 
 <h3 style="margin-top:20px">Mainnet — producción, SOL real</h3>
@@ -825,13 +1116,18 @@ npm run build
   <code>bash scripts/deploy-mainnet.sh</code> — compila + despliega contrato Mainnet
 </div>
 
+<div class="box blue" style="margin-top:10px">
+  <strong>Wallets compatibles:</strong> Phantom, Solflare, MetaMask (Solana Snap), Coinbase Wallet, Trust Wallet y cualquier billetera compatible con el estándar de Solana.
+</div>
+
 <div class="box amber" style="margin-top:10px">
-  <strong>No hay watcher.mjs.</strong> El archivo <code>scripts/watcher.mjs</code> no existe en el repositorio. La arquitectura CEX es completamente client-side (serverless). El proxy <code>/watcher</code> en <code>vite.config.js</code> existe por compatibilidad pero devuelve 503 JSON si no hay proceso escuchando — ningún componente de la UI lo usa actualmente.
+  <strong>No hay watcher.mjs.</strong> El archivo <code>scripts/watcher.mjs</code> no existe en el repositorio. La arquitectura CEX y el Browser Crank son completamente client-side (serverless). El proxy <code>/watcher</code> en <code>vite.config.js</code> existe por compatibilidad pero devuelve 503 JSON si no hay proceso escuchando — ningún componente de la UI lo usa actualmente.
 </div>
 
 <div class="box purple" style="margin-top:10px">
   <strong>Repositorio:</strong> <a href="https://github.com/Mravenec/BagsCreatorFund-BCF-" target="_blank">github.com/Mravenec/BagsCreatorFund-BCF-</a><br>
-  <strong>Program ID activo (DevNet):</strong> <code>ELarLMHYVxR2TndqEc6kHUSvwRyZUPHJ5BHFcD7yQtcJ</code>
+  <strong>Program ID activo (DevNet):</strong> <code>ELarLMHYVxR2TndqEc6kHUSvwRyZUPHJ5BHFcD7yQtcJ</code><br>
+  <strong>Verificación en startup:</strong> <code>verifyProgram(connection)</code> se llama al montar la app — si el programa no existe en la red, se loggea un error diagnóstico en consola. El Program ID activo también se loggea en <code>App.jsx</code> al cargar: <code>[BCF] Active Program ID (devnet): ELarLMHYVxR2...</code>
 </div>
 </div>
 
