@@ -840,14 +840,16 @@ footer strong{color:var(--text2);font-weight:500}
 <h3 style="margin-top:22px;margin-bottom:10px">Modal "💰 Claim Bags Fees"</h3>
 <p>Al abrir: llama <code>getClaimTransactionsV3(walletPubkey, tokenMint)</code> → <code>POST /fee-claiming/claim-transactions</code> con <code>{wallet, baseMint}</code>. Muestra cuántas TXs hay listas. Si no hay fees: mensaje "No claimable fees at this time". Al confirmar: <code>executeClaimTransactions()</code> firma y envía cada TX en secuencia. Muestra "N/M claim TXs confirmed!".</p>
 
-<h3 style="margin-top:22px;margin-bottom:10px">Sorting de campañas</h3>
-<p>Todas las vistas de campañas (Explore + Dashboard) usan el mismo algoritmo de <code>campaignSorting.js</code>:</p>
+<h3 style="margin-top:22px;margin-bottom:10px">Sorting y Organización</h3>
+<p>Todas las vistas (Explore + Dashboard) y selectores usan lógica de <strong>Orden Natural</strong> (KEV1, KEV2, KEV10) y prioridad por estado:</p>
 <div class="codeblock">
-<span class="c">// 4 niveles de prioridad — campaignSorting.js</span>
+<span class="c">// Algoritmo de prioridad y ordenamiento</span>
 <span class="n">Nivel 1</span>: Por estado → active(1) &gt; pending(2) &gt; settled/finished(3)
 <span class="n">Nivel 2</span>: Mismo estado → por start_ts (más reciente primero)
 <span class="n">Nivel 3</span>: Sin start_ts → por created_at (más reciente primero)
-<span class="n">Nivel 4</span>: Sin fechas → alfabético por title/name
+<span class="n">Nivel 4</span>: Sin fechas → alfabético por title/name (Orden Natural)
+<br/>
+<span class="v">Dashboard Priority</span>: En campañas completadas, las que no tienen ganador y tienen premio pendiente (<code>prizeSOL > 0</code>) se anclan arriba. El resto se ordenan por <strong>recencia (más recientes primero)</strong> para ver la actividad más reciente de inmediato.
 </div>
 </div>
 

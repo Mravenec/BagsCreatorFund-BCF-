@@ -140,7 +140,9 @@ export default function CreateCampaignPage() {
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-            {projects.map(p => {
+            {[...projects]
+              .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }))
+              .map(p => {
               const selected = Number(form.projectIndex) === p.projectIndex;
               return (
                 <label key={p.pda} style={{ display: "flex", alignItems: "center", gap: "13px", padding: "12px 16px", background: selected ? "rgba(56,189,248,.05)" : "var(--bg2)", border: `1px solid ${selected ? "rgba(56,189,248,.3)" : "var(--border2)"}`, borderRadius: "var(--r)", cursor: "pointer", transition: "var(--ease)" }}>

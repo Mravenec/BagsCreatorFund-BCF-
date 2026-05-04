@@ -408,7 +408,9 @@ export default function DashboardPage() {
           </div>
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: "20px" }}>
-            {projects.map(p => {
+            {[...projects]
+              .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }))
+              .map(p => {
               const isSelected = activeProjectIndex === p.projectIndex;
               const projCampaigns = campaigns.filter(c => c.projectIndex === p.projectIndex);
               const isReal = isRealMint(p.mint);
@@ -562,13 +564,15 @@ export default function DashboardPage() {
                 style={{ fontSize: ".72rem", padding: "4px 10px" }}>
                 All ({campaigns.length})
               </button>
-              {projects.map(p => (
-                <button key={p.pda} onClick={() => setActiveProjectIndex(p.projectIndex === activeProjectIndex ? null : p.projectIndex)}
-                  className={`btn btn-sm ${activeProjectIndex === p.projectIndex ? "btn-primary" : "btn-ghost"}`}
-                  style={{ fontSize: ".72rem", padding: "4px 10px" }}>
-                  ${p.symbol} ({campaigns.filter(c => c.projectIndex === p.projectIndex).length})
-                </button>
-              ))}
+              {[...projects]
+                .sort((a, b) => a.symbol.localeCompare(b.symbol, undefined, { numeric: true, sensitivity: 'base' }))
+                .map(p => (
+                  <button key={p.pda} onClick={() => setActiveProjectIndex(p.projectIndex === activeProjectIndex ? null : p.projectIndex)}
+                    className={`btn btn-sm ${activeProjectIndex === p.projectIndex ? "btn-primary" : "btn-ghost"}`}
+                    style={{ fontSize: ".72rem", padding: "4px 10px" }}>
+                    ${p.symbol} ({campaigns.filter(c => c.projectIndex === p.projectIndex).length})
+                  </button>
+                ))}
             </div>
           )}
         </div>
@@ -945,7 +949,42 @@ export default function DashboardPage() {
 
 const CampaignSection = ({ title, campaigns, wallet, projects, handleClaim, handleResolve, handleRoute }) => {
   if (campaigns.length === 0) return null;
-  
+
+  const sorted = [...campaigns].sort((a, b) => {
+    const isCompletedA = ['settled', 'finished'].includes(a.status);
+    const isCompletedB = ['settled', 'finished'].includes(b.status);
+
+    // Specific logic for "Completed Campaigns" section
+    if (isCompletedA && isCompletedB) {
+      // 1. Priority: pending treasury move (no winner + prize > 0)
+      const pendingA = !a.hasWinner && a.prizeSOL > 0;
+      const pendingB = !b.hasWinner && b.prizeSOL > 0;
+      if (pendingA && !pendingB) return -1;
+      if (!pendingA && pendingB) return 1;
+
+      // 2. Recency order (Newest finished first)
+      if (a.deadline && b.deadline) {
+        return b.deadline - a.deadline;
+      }
+      return a.title.localeCompare(b.title);
+    }
+
+    // Standard logic for Active / Upcoming sections
+    // 1. Primary sort: Token Symbol (Natural)
+    const projA = projects.find(p => p.projectIndex === a.projectIndex);
+    const projB = projects.find(p => p.projectIndex === b.projectIndex);
+    const symA = projA?.symbol || "";
+    const symB = projB?.symbol || "";
+    const symComp = symA.localeCompare(symB, undefined, { numeric: true, sensitivity: 'base' });
+    if (symComp !== 0) return symComp;
+
+    // 2. Secondary sort: Deadline (Newest first for active/upcoming)
+    if (a.deadline && b.deadline) {
+      return b.deadline - a.deadline;
+    }
+    return a.title.localeCompare(b.title);
+  });
+
   return (
     <div style={{ marginBottom: '32px' }}>
       <h2 style={{ 
@@ -968,7 +1007,7 @@ const CampaignSection = ({ title, campaigns, wallet, projects, handleClaim, hand
       </h2>
       
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: "24px" }}>
-        {campaigns.map(c => {
+        {sorted.map(c => {
           const isSettled = c.status === "settled";
           const isWinner  = c.hasWinner && c.winnerWallet === wallet?.publicKey?.toBase58();
           const expired   = isExpired(c);
