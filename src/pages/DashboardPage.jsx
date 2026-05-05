@@ -18,6 +18,20 @@ import { IS_MAINNET, NETWORK, SOL_MINT } from "../lib/constants.js";
 import { useToast } from "../components/Toast.jsx";
 import { sortCampaignsByPriority } from "../utils/campaignSorting.js";
 
+// Quirúrgicamente limpia los títulos de Solana (bytes basura)
+const sanitizeText = (text) => {
+  if (!text || typeof text !== 'string') return '';
+  const semiIdx = text.indexOf(';');
+  if (semiIdx !== -1 && semiIdx < 12) {
+    const prefix = text.slice(0, semiIdx);
+    if (prefix.includes('ʚ') || prefix.includes('\uFFFD') || /^[?q\s]+$/.test(prefix)) {
+      return text.slice(semiIdx + 1).trim();
+    }
+  }
+  return text.replace(/[\x00-\x1F\x7F-\x9F]/g, "").trim();
+};
+
+
 export default function DashboardPage() {
   const { connection } = useConnection();
   const wallet  = useAnchorWallet();
@@ -1026,7 +1040,7 @@ const CampaignSection = ({ title, campaigns, wallet, projects, handleClaim, hand
                     )}
                   </div>
                   <Link to={`/campaign/${c.pda}`} style={{ textDecoration: "none", color: "inherit" }}>
-                    <h3 style={{ fontWeight: 800, fontSize: "1rem", margin: 0, lineHeight: 1.3 }}>{c.title}</h3>
+                    <h3 style={{ fontWeight: 800, fontSize: "1rem", margin: 0, lineHeight: 1.3 }}>{sanitizeText(c.title)}</h3>
                   </Link>
                   <div style={{ fontSize: ".7rem", color: "var(--text3)", marginTop: "3px" }}>
                     {c.status === "active"
@@ -1082,18 +1096,28 @@ const CampaignSection = ({ title, campaigns, wallet, projects, handleClaim, hand
                   </button>
                 )}
 
-                {isSettled && !c.hasWinner && (
-                  <button onClick={() => handleRoute(c)} className="btn btn-sm btn-secondary"
-                    disabled={c.prizeSOL <= 0}
-                    style={{ flex: 1.5, fontSize: ".72rem", opacity: c.prizeSOL <= 0 ? 0.5 : 1 }}>
-                    {c.prizeSOL <= 0 ? "✅ In Treasury" : "🏦 → Treasury"}
-                  </button>
-                )}
-
-                {isSettled && c.hasWinner && (
-                  <button disabled className="btn btn-sm btn-outline" style={{ flex: 1.5, fontSize: ".72rem", opacity: 0.7 }}>
-                    🏆 #{fmtPos(c.winningPosition)}
-                  </button>
+                {isSettled && (
+                  <div style={{ flex: 1.5, display: "flex", gap: "8px" }}>
+                    {c.hasWinner ? (
+                      <button 
+                        onClick={() => handleClaim(c)} 
+                        className="btn btn-sm btn-primary" 
+                        disabled={c.claimed || !c.totalPayout}
+                        style={{ flex: 1, fontSize: ".72rem" }}
+                      >
+                        {c.claimed ? "✅ Claimed" : `🏆 Claim ${c.totalPayout.toFixed(2)}`}
+                      </button>
+                    ) : (
+                      <button 
+                        onClick={() => handleRoute(c)} 
+                        className="btn btn-sm btn-secondary"
+                        disabled={c.prizeSOL <= 0}
+                        style={{ flex: 1, fontSize: ".72rem", opacity: c.prizeSOL <= 0 ? 0.5 : 1 }}
+                      >
+                        {c.prizeSOL <= 0 ? "✅ In Treasury" : "🏦 → Treasury"}
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
             </div>

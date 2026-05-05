@@ -23,6 +23,20 @@ const SOL = LAMPORTS_PER_SOL;
 // ─── CEX Position Persistence ─────────────────────────────────────────────────
 const CEX_STORAGE_KEY = 'bcf_cex_positions_v1';
 
+// Quirúrgicamente limpia los títulos de Solana (bytes basura)
+const sanitizeText = (text) => {
+  if (!text || typeof text !== 'string') return '';
+  const semiIdx = text.indexOf(';');
+  if (semiIdx !== -1 && semiIdx < 12) {
+    const prefix = text.slice(0, semiIdx);
+    if (prefix.includes('ʚ') || prefix.includes('\uFFFD') || /^[?q\s]+$/.test(prefix)) {
+      return text.slice(semiIdx + 1).trim();
+    }
+  }
+  return text.replace(/[\x00-\x1F\x7F-\x9F]/g, "").trim();
+};
+
+
 // saveCEXPosition: guarda un HINT local de qué dirección usó el usuario para
 // pagar por CEX. Se usa ÚNICAMENTE para saber qué dirección verificar on-chain
 // en la pantalla de resultado. El ganador real siempre se verifica en blockchain.
@@ -1009,7 +1023,7 @@ export default function CampaignPage() {
   if (!campaign) return <div style={{ padding:"80px", textAlign:"center" }}><span className="spin" style={{ fontSize:"1.5rem" }}>⟳</span></div>;
 
   const isCreator = connected && publicKey?.toBase58()===campaign.creatorWallet;
-  const expired   = isExpired(campaign);
+  const expired   = campaign ? isExpired(campaign) : false;
   const sold      = posStatus(campaign);
   const pot       = totalPot(campaign);
   const isSettled = campaign.status==="settled";
@@ -1282,8 +1296,8 @@ export default function CampaignPage() {
               {token?.symbol && <span className="badge badge-bags">${token.symbol}</span>}
             </div>
 
-            <h1 style={{ fontSize:"2.1rem", fontWeight:700, letterSpacing:"-.04em", lineHeight:1.1, marginBottom:"14px" }}>{campaign.title}</h1>
-            <p style={{ color:"var(--text2)", lineHeight:1.7, marginBottom:"28px", fontSize:".95rem" }}>{campaign.description}</p>
+            <h1 style={{ fontSize:"2.1rem", fontWeight:700, letterSpacing:"-.04em", lineHeight:1.1, marginBottom:"14px" }}>{sanitizeText(campaign.title)}</h1>
+            <p style={{ color:"var(--text2)", lineHeight:1.7, marginBottom:"28px", fontSize:".95rem" }}>{sanitizeText(campaign.description)}</p>
 
             {/* Position grid */}
             <div style={{ marginBottom:"28px" }}>

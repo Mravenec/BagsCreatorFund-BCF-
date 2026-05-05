@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { fetchAllCampaigns } from "../lib/programClient.js";
+import { fetchAllCampaigns, fetchGlobalProjects } from "../lib/programClient.js";
 import { useConnection } from "@solana/wallet-adapter-react";
 import { CATEGORIES } from "../lib/constants.js";
 import CampaignCard from "../components/CampaignCard.jsx";
@@ -22,8 +22,23 @@ export default function ExplorePage() {
   useEffect(() => {
     async function load() {
       setLoading(true);
-      const data = await fetchAllCampaigns(connection);
-      setAll(data);
+      try {
+        const [camps, projects] = await Promise.all([
+          fetchAllCampaigns(connection),
+          fetchGlobalProjects(connection)
+        ]);
+        
+        const enriched = camps.map(c => ({
+          ...c,
+          tokenSymbol: projects.find(p => p.projectIndex === c.projectIndex)?.symbol || c.tokenSymbol
+        }));
+        
+        setAll(enriched);
+      } catch (e) {
+        console.error("[Explore] Load error:", e);
+        const data = await fetchAllCampaigns(connection);
+        setAll(data);
+      }
       setLoading(false);
     }
     load();

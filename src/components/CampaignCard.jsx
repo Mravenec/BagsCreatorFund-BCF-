@@ -4,6 +4,25 @@ import { posStatus, totalPot, timeLeft, isExpired, fmtPos } from '../lib/program
 import { toUSDC } from '../lib/constants.js';
 import { shortAddr } from '../lib/solana.js';
 
+// Quirúrgicamente limpia los títulos de Solana (bytes basura)
+const sanitizeText = (text) => {
+  if (!text || typeof text !== 'string') return '';
+  
+  // 1. Detección de Prefijo Corrupto (buscamos ';' en los primeros 12 caracteres)
+  const semiIdx = text.indexOf(';');
+  if (semiIdx !== -1 && semiIdx < 12) {
+    const prefix = text.slice(0, semiIdx);
+    // 2. Validación de Basura (buscamos caracteres de error confirmados: ʚ o U+FFFD)
+    if (prefix.includes('ʚ') || prefix.includes('\uFFFD') || /^[?q\s]+$/.test(prefix)) {
+      // Es basura confirmada, cortamos y entregamos el resto
+      return text.slice(semiIdx + 1).trim();
+    }
+  }
+  
+  // 3. Limpieza de Caracteres Invisibles (bytes no imprimibles < 32 excepto espacio)
+  return text.replace(/[\x00-\x1F\x7F-\x9F]/g, "").trim();
+};
+
 export default function CampaignCard({ campaign: c }) {
   const [timeDisplay, setTimeDisplay] = React.useState(c.deadline ? timeLeft(c.deadline) : "—");
   const sold    = posStatus(c);
@@ -35,13 +54,13 @@ export default function CampaignCard({ campaign: c }) {
             <div style={{ fontSize: '.7rem', color: 'var(--text3)', fontFamily: 'var(--mono)', marginBottom: '4px' }}>
               ${c.tokenSymbol}
             </div>
-            <h3 style={{ fontSize: '.98rem', fontWeight: 700, letterSpacing: '-.02em', lineHeight: 1.25 }}>{c.title}</h3>
+            <h3 style={{ fontSize: '.98rem', fontWeight: 700, letterSpacing: '-.02em', lineHeight: 1.25 }}>{sanitizeText(c.title)}</h3>
           </div>
           {badge}
         </div>
 
         <p style={{ fontSize: '.81rem', color: 'var(--text2)', lineHeight: 1.5, marginBottom: '16px', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-          {c.description}
+          {sanitizeText(c.description)}
         </p>
 
         {/* Position mini-grid */}

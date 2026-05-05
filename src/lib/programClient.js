@@ -415,6 +415,24 @@ export async function fetchAllProjects(provider, creatorPubkey) {
   }
 }
 
+/** Fetch ALL projects on the program (for Explore page enrichment) */
+export async function fetchGlobalProjects(connection) {
+  try {
+    const program = new Program(IDL, PROGRAM_ID, { connection });
+    const accounts = await program.account.projectAccount.all();
+    const projects = [];
+    for (const a of accounts) {
+      const enriched = await enrichProject(a.publicKey.toBase58(), a.account);
+      if (enriched) projects.push(enriched);
+    }
+    return projects;
+  } catch (e) {
+    console.error('[BCF] fetchGlobalProjects error:', e.message);
+    return [];
+  }
+}
+
+
 /** Enrich a raw ProjectAccount with metadata (name, symbol, logo from Bags API) */
 async function enrichProject(pdaStr, account) {
   const mintStr = account.tokenMint?.toBase58?.() || account.tokenMint?.toString() || '???';
